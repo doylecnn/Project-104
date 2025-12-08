@@ -440,8 +440,6 @@
                 const rowIdx = findLandingRow(landingMap, ev.cardValue);
                 const rowText = rowIdx !== null ? `，落在第 ${rowIdx + 1} 行` : "";
                 log(`${ev.name} 出牌 ${ev.cardValue}${rowText}`);
-            } else {
-                log(`${ev.name} 出牌（牌值未知）`);
             }
         });
         prevRowsSnapshot = snapshotRows(publicState.rows);
@@ -513,29 +511,30 @@
             div.dataset.rowIdx = idx;
             if (isMyTurn) div.onclick = () => { if(confirm("收走此行?")) ws.send(JSON.stringify({type:"choose_row", value: idx})); };
             
-            const landingVals = landingMap.get(idx) || [];
+            const landingCards = landingMap.get(idx) || [];
             
             row.cards.forEach(c => {
                 const cardEl = createCard(c);
                 cardEl.dataset.cardValue = c.value;
                 
-                if (landingVals.includes(c.value)) {
-                    // 是新落地的牌：先设为不可见（占位），等待动画处理
-                    cardEl.style.opacity = "0"; 
-                    animationTargets.push({
-                        element: cardEl,
-                        value: c.value
-                    });
-                } else {
-                    cardEl.style.opacity = "1";
-                }
-                div.appendChild(cardEl);
-            });
-            board.appendChild(div);
+            const isNew = landingCards.some(lc => lc.value === c.value);
+
+            if (isNew) {
+                cardEl.style.opacity = "0"; 
+                animationTargets.push({
+                    element: cardEl,
+                    value: c.value
+                });
+            } else {
+                cardEl.style.opacity = "1";
+            }
+            div.appendChild(cardEl);
         });
-        
-        return animationTargets;
-    }
+        board.appendChild(div);
+    });
+    
+    return animationTargets;
+}
 
     // --- 核心修复：动画处理函数 ---
 
@@ -762,8 +761,8 @@
         if (!prev) return res;
         current.forEach((row, idx) => {
             const prevVals = prev[idx] || [];
-            const curVals = (row.cards || []).map(c => c.value);
-            const added = curVals.filter(v => !prevVals.includes(v));
+        // 筛选出新增加的 Card 对象
+            const added = (row.cards || []).filter(c => !prevVals.includes(c.value));
             if (added.length > 0) res.set(idx, added);
         });
         return res;
@@ -771,7 +770,7 @@
 
     function flattenLanding(landingMap) {
         const arr = [];
-        landingMap.forEach(vals => vals.forEach(v => arr.push(v)));
+        landingMap.forEach(cards => cards.forEach(c => arr.push(c)));
         return arr;
     }
 
@@ -782,22 +781,17 @@
         return res;
     }
 
-    function diffPlayerPlays(prevSnap, currPlayers, landingPool) {
+    function diffPlayerPlays(prevSnap, currPlayers, landingCards) {
         const events = [];
-        if (!prevSnap) return events;
-        const pool = [...landingPool];
-        Object.values(currPlayers).forEach(p => {
-            const prev = prevSnap[p.id];
-            if (!prev) return;
-            const diff = prev.handSize - (p.handSize ?? prev.handSize);
-            if (diff > 0) {
-                let cardValue = null;
-                if (p.id === myId && mySelectedCardValue !== null) {
-                    cardValue = mySelectedCardValue;
-                } else if (pool.length > 0) {
-                    cardValue = pool.shift();
-                }
-                events.push({ id: p.id, name: p.name || "未知玩家", cardValue });
+        // 直接遍历新落地的牌，因为现在牌里包含了 ownerId
+        landingCards.forEach(card => {
+            if (card.ownerId && currPlayers[card.ownerId]) {
+                const p = currPlayers[card.ownerId];
+                events.push({ 
+                    id: p.id, 
+                    name: p.name, 
+                    cardValue: card.value 
+                });
             }
         });
         return events;
@@ -805,7 +799,10 @@
 
     function findLandingRow(landingMap, val) {
         let hit = null;
-        landingMap.forEach((vals, idx) => { if (vals.includes(val)) hit = idx; });
+        // landingMap 的 value 现在是 Card 对象数组
+        landingMap.forEach((cards, idx) => { 
+            if (cards.some(c => c.value === val)) hit = idx; 
+        });
         return hit;
     }
     function sendReady() { ws.send(JSON.stringify({type: "ready"})); }

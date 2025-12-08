@@ -67,6 +67,7 @@ func getRoomStats(roomID string) []PlayerStat {
 type Card struct {
 	Value int `json:"value"`
 	Score int `json:"score"`
+	OwnerID string `json:"ownerId,omitempty"`
 }
 
 type Player struct {
@@ -292,14 +293,8 @@ func (r *Room) prepareTurnResolution() { /* 同上个版本 */
 	for id, p := range r.Players {
 		if p.SelectedCard != nil {
 			card := *p.SelectedCard
+			card.OwnerID = id 
 			r.TurnQueue = append(r.TurnQueue, PlayAction{PlayerID: id, Card: card})
-			newHand := make([]Card, 0)
-			for _, c := range p.Hand {
-				if c.Value != card.Value {
-					newHand = append(newHand, c)
-				}
-			}
-			p.Hand = newHand
 			p.SelectedCard = nil
 		}
 	}
@@ -340,6 +335,18 @@ func (r *Room) processTurnQueue() {
 	// 下面是正常的出牌判定逻辑 (保持不变)
 	currentPlay := r.TurnQueue[0]
 	card := currentPlay.Card
+	
+	player := r.Players[currentPlay.PlayerID]
+	if player != nil {
+		newHand := make([]Card, 0)
+		for _, c := range player.Hand {
+			if c.Value != card.Value {
+				newHand = append(newHand, c)
+			}
+		}
+		player.Hand = newHand
+	}
+
 	bestRowIdx := -1
 	diff := 1000
 	for i := 0; i < 4; i++ {
