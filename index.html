@@ -8,38 +8,57 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #2c3e50; color: white; margin: 0; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; }
         
-        /* 登录遮罩 */
-        #login-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(44, 62, 80, 0.95); z-index: 1000;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        /* 视图控制 */
+        .screen { display: none; }
+        .screen.active { display: block; }
+
+        /* 登录/大厅样式 */
+        .auth-box {
+            background: white; padding: 30px; border-radius: 10px; color: #333; 
+            max-width: 400px; margin: 50px auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
         }
-        .login-box {
-            background: white; padding: 30px; border-radius: 10px; color: #333; text-align: center; width: 300px;
-        }
-        .login-box input {
-            width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px;
+        .auth-box h2 { margin-top: 0; color: #e67e22; text-align: center; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;}
+        input[type="text"] {
+            width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px;
         }
         
-        /* 游戏区域 */
-        .game-board { background-color: #34495e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-        .row { 
-            display: flex; margin-bottom: 10px; align-items: center; height: 75px; 
-            background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; border: 2px solid transparent; transition: all 0.2s;
+        .room-list { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; max-height: 300px; overflow-y: auto;}
+        .room-item {
+            background: #f9f9f9; border: 1px solid #ddd; padding: 10px; margin-bottom: 8px; border-radius: 5px;
+            display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s;
         }
-        .row.selectable { border-color: #e74c3c; cursor: pointer; background: rgba(231, 76, 60, 0.2); }
-        .row.selectable:hover { background: rgba(231, 76, 60, 0.4); }
+        .room-item:hover { background: #eef2f3; }
+        .room-info { font-size: 14px; }
+        .room-status { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #95a5a6; color: white;}
+        .room-status.waiting { background: #2ecc71; }
+        .room-status.playing { background: #e74c3c; }
 
-        /* 卡牌样式 */
+        /* 按钮 */
+        button { padding: 10px 15px; font-size: 14px; cursor: pointer; border: none; color: white; border-radius: 5px; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-green { background: #27ae60; width: 100%; font-weight: bold; font-size: 16px; margin-bottom: 10px;}
+        .btn-blue { background: #2980b9; }
+        .btn-red { background: #c0392b; }
+        .btn-orange { background: #e67e22; }
+        .btn-small { padding: 5px 10px; font-size: 12px; }
+
+        /* 游戏内样式 (复用之前的) */
+        .game-header { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 20px; }
+        .game-board { background-color: #34495e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .row { display: flex; margin-bottom: 10px; align-items: center; height: 75px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; border: 2px solid transparent; }
+        .row.selectable { border-color: #e74c3c; cursor: pointer; background: rgba(231, 76, 60, 0.2); }
+        
         .card {
             width: 45px; height: 65px; background-color: #ecf0f1; color: #2c3e50;
             border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-            font-weight: bold; margin-right: 8px; font-size: 16px; position: relative;
-            border: 2px solid #bdc3c7; padding: 2px; user-select: none;
+            font-weight: bold; margin-right: 8px; font-size: 16px; border: 2px solid #bdc3c7; padding: 2px; user-select: none;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
         }
-        .card .val { margin-top: 2px; }
-        .card .bullheads { font-size: 10px; line-height: 10px; text-align: center; margin-bottom: 2px; color: #c0392b; letter-spacing: -1px;}
-        
+        .card .bullheads { font-size: 10px; line-height: 10px; text-align: center; color: #c0392b; letter-spacing: -1px;}
         .card.score-1 { border-color: #bdc3c7; }
         .card.score-2 { border-color: #3498db; background-color: #d6eaf8; }
         .card.score-3 { border-color: #f1c40f; background-color: #fcf3cf; }
@@ -47,177 +66,339 @@
         .card.score-7 { border-color: #e74c3c; background-color: #f5b7b1; color: #c0392b; }
 
         .hand { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; justify-content: center; min-height: 80px;}
-        .hand .card { width: 55px; height: 80px; font-size: 20px; cursor: pointer; transition: transform 0.2s; }
-        .hand .card:hover { transform: translateY(-10px); background-color: #fff; }
-        .hand .card.selected { background-color: #2ecc71; color: white; border-color: #27ae60; transform: translateY(-15px); }
+        .hand .card { width: 55px; height: 80px; font-size: 20px; cursor: pointer;}
+        .hand .card:hover { transform: translateY(-10px); background-color: #fff; z-index: 10;}
+        .hand .card.selected { background-color: #2ecc71; color: white; border-color: #27ae60; transform: translateY(-30px); box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
+        .card.selected:hover { transform: translateY(-30px); }
         .hand .card.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-        .status-bar { display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;}
-        .player-list { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
-        .player-tag { background: #16a085; padding: 8px 15px; border-radius: 8px; font-size: 14px; min-width: 80px;}
-        .player-tag.me { border: 2px solid #f1c40f; box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); }
+        .player-list { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        .player-tag { background: #16a085; padding: 5px 10px; border-radius: 5px; font-size: 13px; min-width: 60px; text-align: center;}
+        .player-tag.me { border: 2px solid #f1c40f; }
         .player-tag.ready { background: #27ae60; }
-        .player-tag.choosing { background: #e74c3c; animation: pulse 1s infinite; }
+        .player-tag.owner::after { content: " 👑"; }
 
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #e67e22; border: none; color: white; border-radius: 5px; }
-        button:disabled { background: #95a5a6; cursor: not-allowed; }
-        .btn-green { background: #27ae60; width: 100%; }
-        
-        #log { height: 120px; overflow-y: scroll; background: rgba(0,0,0,0.3); padding: 10px; font-size: 13px; margin-top: 20px; border-radius: 5px; font-family: monospace;}
-        #instruction { background: #d35400; padding: 10px; text-align: center; border-radius: 5px; margin-bottom: 15px; display: none; font-weight: bold;}
+        /* 模态框 */
+        #stats-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .stats-box { background: white; padding: 20px; border-radius: 10px; color: #333; width: 400px; max-width: 90%; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
     </style>
 </head>
 <body>
 
-<!-- 登录/欢迎界面 -->
-<div id="login-screen">
-    <div class="login-box">
-        <h2>🐮 谁是牛头王</h2>
-        <p>请输入你的名字加入游戏</p>
-        <input type="text" id="username-input" placeholder="你的昵称" maxlength="10">
-        <button class="btn-green" onclick="doLogin()">加入游戏</button>
+<!-- 大厅界面 -->
+<div id="lobby-screen" class="screen active">
+    <div class="auth-box">
+        <h2>🐮 谁是牛头王 - 大厅</h2>
+        
+        <div class="input-group">
+            <label>你的昵称</label>
+            <input type="text" id="username-input" placeholder="请输入昵称" maxlength="10">
+        </div>
+
+        <div id="create-room-section">
+            <div class="input-group">
+                <label>创建新房间</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="new-room-id" placeholder="例如: 888">
+                    <button class="btn-green" style="width: auto; margin:0;" onclick="createRoom()">创建</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="room-list">
+            <div style="font-weight: bold; margin-bottom: 10px;">房间列表</div>
+            <div id="room-container">
+                <div style="text-align: center; color: #999;">正在加载房间...</div>
+            </div>
+        </div>
     </div>
 </div>
 
-<div class="container">
-    <div class="status-bar">
-        <h2>🐮 谁是牛头王</h2>
-        <div id="connection-status">🔴 未连接</div>
+<!-- 游戏界面 -->
+<div id="game-screen" class="screen">
+    <div class="container">
+        <div class="game-header">
+            <div>
+                <h3 style="margin:0; display: inline-block;">房间: <span id="current-room-id">-</span></h3>
+                <button class="btn-small btn-blue" onclick="copyInviteLink()" style="margin-left: 10px;">🔗 复制邀请链接</button>
+            </div>
+            <div>
+                <button class="btn-small btn-orange" onclick="showStats()">📊 战绩</button>
+                <button class="btn-small btn-red" id="leave-btn" onclick="leaveRoom()">🚪 退出房间</button>
+                <button class="btn-small btn-red" id="delete-btn" onclick="deleteRoom()" style="display:none;">🗑️ 解散房间</button>
+            </div>
+        </div>
+
+        <div id="instruction" style="background: #d35400; padding: 10px; text-align: center; border-radius: 5px; margin-bottom: 15px; display: none; font-weight: bold;"></div>
+
+        <div style="text-align: center; margin-bottom: 15px;">
+            <button id="ready-btn" class="btn-green" style="width: 200px;" onclick="sendReady()">准备 / Ready</button>
+            <button id="restart-btn" class="btn-red" style="width: 200px; display:none;" onclick="sendRestart()">重新开始</button>
+        </div>
+
+        <div class="player-list" id="player-list"></div>
+
+        <div class="game-board" id="board"></div>
+
+        <h3>你的手牌</h3>
+        <div class="hand" id="hand"></div>
+
+        <div id="log" style="height: 100px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; font-size: 12px; margin-top: 20px; font-family: monospace;"></div>
     </div>
+</div>
 
-    <div id="instruction"></div>
-
-    <div id="lobby" style="text-align: center; margin-bottom: 20px;">
-        <button id="ready-btn" onclick="sendReady()">准备 / Ready</button>
-        <button id="restart-btn" onclick="sendRestart()" style="display:none; background-color: #c0392b;">重新开始</button>
+<!-- 战绩模态框 -->
+<div id="stats-modal" onclick="closeStats()">
+    <div class="stats-box" onclick="event.stopPropagation()">
+        <h3 style="text-align: center;">🏆 战绩榜</h3>
+        <table id="stats-table">
+            <thead><tr><th>排名</th><th>玩家</th><th>局数</th><th>总分</th></tr></thead>
+            <tbody id="stats-body"></tbody>
+        </table>
+        <div style="text-align: center; margin-top: 15px;"><button class="btn-blue" onclick="closeStats()">关闭</button></div>
     </div>
-
-    <div class="player-list" id="player-list"></div>
-
-    <div class="game-board" id="board">
-        <div class="row">等待游戏开始...</div>
-    </div>
-
-    <h3>你的手牌</h3>
-    <div class="hand" id="hand"></div>
-
-    <div id="log"></div>
 </div>
 
 <script>
     let ws;
-    let myId = "";
-    let myName = "";
-    let gameState = null;
-    let myHand = [];
+    let lobbyWs;
+    let myId = sessionStorage.getItem("take5_uid") || "user_" + Math.random().toString(36).substr(2, 9);
+    let myName = sessionStorage.getItem("take5_name") || "";
+    let currentRoomId = "";
+    let isOwner = false;
+    let roomStats = [];
 
-    // 页面加载时检查是否已有登录信息
+    // 初始化
     window.onload = function() {
-        const storedId = sessionStorage.getItem("take5_uid");
-        const storedName = sessionStorage.getItem("take5_name");
-        
-        if (storedId && storedName) {
-            myId = storedId;
-            myName = storedName;
-            document.getElementById("login-screen").style.display = "none";
-            connect();
+        sessionStorage.setItem("take5_uid", myId);
+        if (myName) document.getElementById("username-input").value = myName;
+
+        // 检查 URL 参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomParam = urlParams.get('room');
+
+        if (roomParam) {
+            // 如果有房间号，尝试直接进入
+            document.getElementById("new-room-id").value = roomParam;
+            // 自动填充名字后，用户点击进入或者自动进入
+            // 这里我们让用户确认名字后手动点击，或者自动检查
+            if (myName) {
+                joinRoom(roomParam);
+            } else {
+                alert("请先输入昵称");
+            }
+        } else {
+            connectLobby();
         }
     };
 
-    function doLogin() {
-        const input = document.getElementById("username-input");
-        const name = input.value.trim();
-        if (!name) return alert("请输入名字");
+    // --- 大厅逻辑 ---
 
-        // 生成新ID
-        myId = "user_" + Math.random().toString(36).substr(2, 9);
-        myName = name;
-
-        // 存入 SessionStorage
-        sessionStorage.setItem("take5_uid", myId);
-        sessionStorage.setItem("take5_name", myName);
-
-        document.getElementById("login-screen").style.display = "none";
-        connect();
+    function connectLobby() {
+        if (lobbyWs) return;
+        lobbyWs = new WebSocket("ws://" + window.location.host + "/lobby_ws");
+        lobbyWs.onmessage = (evt) => {
+            const msg = JSON.parse(evt.data);
+            if (msg.type === "room_list") {
+                renderRoomList(msg.payload);
+            }
+        };
     }
 
-    function connect() {
-        ws = new WebSocket("ws://" + window.location.host + "/ws");
+    function renderRoomList(rooms) {
+        const container = document.getElementById("room-container");
+        container.innerHTML = "";
+        if (rooms.length === 0) {
+            container.innerHTML = "<div style='text-align:center; padding:10px; color:#666;'>暂无房间，快创建一个吧！</div>";
+            return;
+        }
+        rooms.forEach(r => {
+            const div = document.createElement("div");
+            div.className = "room-item";
+            div.innerHTML = `
+                <div class="room-info">
+                    <strong>房间 ${r.id}</strong> <span style="color:#666">(${r.ownerName})</span>
+                    <br>人数: ${r.playerCount}
+                </div>
+                <div class="room-status ${r.status}">${r.status === 'waiting' ? '等待中' : '游戏中'}</div>
+            `;
+            div.onclick = () => joinRoom(r.id);
+            container.appendChild(div);
+        });
+    }
 
+    function saveUserInfo() {
+        const nameInput = document.getElementById("username-input");
+        myName = nameInput.value.trim();
+        if (!myName) { alert("请输入昵称"); return false; }
+        sessionStorage.setItem("take5_name", myName);
+        return true;
+    }
+
+    async function createRoom() {
+        if (!saveUserInfo()) return;
+        const roomId = document.getElementById("new-room-id").value.trim();
+        if (!roomId) return alert("请输入房间号");
+
+        // 连接游戏WS并发送创建指令
+        connectGameWs(roomId, "create_room");
+    }
+
+    async function joinRoom(roomId) {
+        if (!saveUserInfo()) return;
+        
+        // 先检查房间是否存在
+        try {
+            const res = await fetch(`/check_room?id=${roomId}`);
+            const data = await res.json();
+            if (!data.exists) {
+                alert("房间不存在！");
+                // 清除 URL 参数
+                window.history.pushState({}, document.title, "/");
+                connectLobby();
+                return;
+            }
+            connectGameWs(roomId, "login");
+        } catch (e) {
+            alert("网络错误");
+        }
+    }
+
+    // --- 游戏连接逻辑 ---
+
+    function connectGameWs(roomId, actionType) {
+        if (ws) ws.close();
+        
+        ws = new WebSocket("ws://" + window.location.host + "/ws");
+        
         ws.onopen = () => {
-            document.getElementById("connection-status").innerText = "🟢 已连接";
-            log("连接服务器成功...");
-            // 连接建立后，立即发送登录包
             ws.send(JSON.stringify({
-                type: "login",
+                type: actionType,
                 id: myId,
-                payload: myName
+                payload: myName,
+                roomId: roomId
             }));
         };
 
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
-            if (msg.type === "state") {
+            if (msg.type === "error") {
+                alert(msg.payload);
+                ws.close();
+                ws = null;
+            } else if (msg.type === "state") {
+                // 登录成功，切换界面
+                if (document.getElementById("lobby-screen").style.display !== "none") {
+                    switchScreen("game");
+                    // 更新 URL
+                    const url = new URL(window.location);
+                    url.searchParams.set('room', roomId);
+                    window.history.pushState({}, '', url);
+                    // 关闭大厅连接节省资源
+                    if (lobbyWs) { lobbyWs.close(); lobbyWs = null; }
+                }
                 handleStateUpdate(msg.payload);
             } else if (msg.type === "info") {
-                log("📢 " + msg.payload);
+                log(msg.payload);
+            } else if (msg.type === "stats") {
+                roomStats = msg.payload;
+                renderStats();
+            } else if (msg.type === "room_closed") {
+                alert("房间已解散");
+                leaveRoom(true); // true = passive leave
             }
         };
 
         ws.onclose = () => {
-            document.getElementById("connection-status").innerText = "🔴 断开连接";
+            console.log("Game connection closed");
         };
     }
 
-    function handleStateUpdate(payload) {
-        const publicState = payload.publicState;
-        myHand = payload.myHand;
-        // myId 已经在本地有了，不过可以确认一下
-        gameState = publicState;
-
-        renderPlayers(publicState.players, publicState.pendingPlayerId);
-        renderBoard(publicState.rows, publicState.status, publicState.pendingPlayerId);
-        renderHand(myHand, publicState.status);
-        updateUIStatus(publicState);
+    function switchScreen(screen) {
+        document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+        document.getElementById(screen + '-screen').classList.add('active');
     }
 
-    function renderPlayers(players, pendingPid) {
+    function leaveRoom(passive = false) {
+        if (!passive && ws) {
+            ws.send(JSON.stringify({ type: "leave_room" }));
+        }
+        if (ws) ws.close();
+        ws = null;
+        currentRoomId = "";
+        
+        // 清除 URL 参数
+        window.history.pushState({}, document.title, "/");
+        
+        switchScreen("lobby");
+        connectLobby(); // 重新连接大厅
+    }
+
+    function deleteRoom() {
+        if (confirm("确定要解散房间吗？所有玩家将被踢出。")) {
+            ws.send(JSON.stringify({ type: "delete_room" }));
+        }
+    }
+
+    function copyInviteLink() {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            alert("链接已复制: " + url);
+        });
+    }
+
+    // --- 游戏渲染逻辑 (与之前类似，增加房主判断) ---
+
+    function handleStateUpdate(payload) {
+        const publicState = payload.publicState;
+        const myHand = payload.myHand;
+        currentRoomId = payload.roomId;
+        document.getElementById("current-room-id").innerText = currentRoomId;
+
+        isOwner = (publicState.ownerId === myId);
+        document.getElementById("delete-btn").style.display = isOwner ? "inline-block" : "none";
+        document.getElementById("restart-btn").style.display = (isOwner && publicState.status === "finished") ? "inline-block" : "none";
+
+        renderPlayers(publicState.players, publicState.pendingPlayerId, publicState.ownerId);
+        renderBoard(publicState.rows, publicState.status, publicState.pendingPlayerId);
+        renderHand(myHand, publicState.status);
+        
+        // 状态提示
+        const instruction = document.getElementById("instruction");
+        const readyBtn = document.getElementById("ready-btn");
+        
+        if (publicState.status === "waiting") {
+            readyBtn.style.display = "inline-block";
+            const me = publicState.players[myId];
+            readyBtn.innerText = (me && me.ready) ? "等待其他人..." : "准备 / Ready";
+            readyBtn.disabled = (me && me.ready);
+            instruction.style.display = "none";
+        } else {
+            readyBtn.style.display = "none";
+            if (publicState.status === "choosing_row") {
+                instruction.style.display = "block";
+                if (publicState.pendingPlayerId === myId) {
+                    instruction.style.background = "#e74c3c";
+                    instruction.innerHTML = `⚠️ 请选择一行收走！`;
+                } else {
+                    instruction.style.background = "#d35400";
+                    instruction.innerText = `等待某人选行...`;
+                }
+            } else {
+                instruction.style.display = "none";
+            }
+        }
+    }
+
+    function renderPlayers(players, pendingPid, ownerId) {
         const container = document.getElementById("player-list");
         container.innerHTML = "";
-        
-        let pList = Object.values(players);
-        // 把自己排在第一个
-        pList.sort((a, b) => (a.id === myId ? -1 : 1));
-
-        pList.forEach(p => {
+        Object.values(players).forEach(p => {
             const div = document.createElement("div");
-            let statusClass = "";
-            let statusText = "";
-
-            if (gameState.status === "waiting") {
-                statusText = p.ready ? "已准备" : "未准备";
-                if(p.ready) statusClass = "ready";
-            } else if (gameState.status === "playing") {
-                statusText = p.hasSelected ? "✅ 已出牌" : "🤔 思考中";
-            } else if (gameState.status === "choosing_row") {
-                if (p.id === pendingPid) {
-                    statusClass = "choosing";
-                    statusText = "😱 选行中...";
-                } else {
-                    statusText = "👀 围观";
-                }
-            } else if (gameState.status === "finished") {
-                statusText = "结束";
-            }
-
-            div.className = `player-tag ${p.id === myId ? 'me' : ''} ${statusClass}`;
-            div.innerHTML = `
-                <div style="font-weight:bold; margin-bottom:4px;">${p.name}</div>
-                <div>分数: ${p.score} 🐮</div>
-                <div style="font-size:12px; margin-top:4px; opacity:0.9">${statusText}</div>
-            `;
+            div.className = `player-tag ${p.id === myId ? 'me' : ''} ${p.ready ? 'ready' : ''} ${p.id === ownerId ? 'owner' : ''}`;
+            div.innerText = `${p.name} (${p.score})`;
             container.appendChild(div);
         });
     }
@@ -225,152 +406,58 @@
     function renderBoard(rows, status, pendingPid) {
         const board = document.getElementById("board");
         board.innerHTML = "";
-        if (!rows || rows.length === 0) return;
-
-        const isMyTurnToChoose = (status === "choosing_row" && pendingPid === myId);
-
-        rows.forEach((row, index) => {
-            const rowDiv = document.createElement("div");
-            rowDiv.className = "row";
+        const isMyTurn = (status === "choosing_row" && pendingPid === myId);
+        
+        rows.forEach((row, idx) => {
+            const div = document.createElement("div");
+            div.className = "row " + (isMyTurn ? "selectable" : "");
+            if (isMyTurn) div.onclick = () => { if(confirm("收走此行?")) ws.send(JSON.stringify({type:"choose_row", value: idx})); };
             
-            if (isMyTurnToChoose) {
-                rowDiv.classList.add("selectable");
-                rowDiv.onclick = () => chooseRow(index);
-                rowDiv.title = "点击收走这一行";
-            }
-            
-            if (row.cards) {
-                row.cards.forEach(card => {
-                    rowDiv.appendChild(createCardElement(card));
-                });
-            }
-            
-            const info = document.createElement("span");
-            info.style.marginLeft = "auto";
-            info.style.fontSize = "12px";
-            info.style.opacity = "0.5";
-            info.innerText = `${row.cards.length}/5`;
-            rowDiv.appendChild(info);
-
-            board.appendChild(rowDiv);
+            row.cards.forEach(c => div.appendChild(createCard(c)));
+            board.appendChild(div);
         });
     }
 
     function renderHand(hand, status) {
         const container = document.getElementById("hand");
         container.innerHTML = "";
-        
-        if (!hand) return;
-
-        hand.forEach(card => {
-            const el = createCardElement(card);
-            const me = gameState.players[myId];
-            // 只有在 playing 阶段且自己没出过牌才能点
-            // 注意：如果我是旁观者（hand为空），这里也不会渲染
-            const canPlay = status === "playing" && me && !me.hasSelected;
-            
-            if (canPlay) {
-                el.onclick = () => playCard(card.value);
-            } else {
-                el.classList.add("disabled");
-            }
+        hand.forEach(c => {
+            const el = createCard(c);
+            // 只有 playing 状态且没出过牌才能点
+            // 这里简化判断，后端会校验
+            el.onclick = () => ws.send(JSON.stringify({type:"play_card", value: c.value}));
             container.appendChild(el);
         });
     }
 
-    function createCardElement(card) {
-        const el = document.createElement("div");
+    function createCard(c) {
+        const div = document.createElement("div");
         let scoreClass = "score-1";
-        if (card.score === 2) scoreClass = "score-2";
-        if (card.score === 3) scoreClass = "score-3";
-        if (card.score === 5) scoreClass = "score-5";
-        if (card.score === 7) scoreClass = "score-7";
-
-        el.className = `card ${scoreClass}`;
-        
-        let bulls = "";
-        for(let i=0; i<card.score; i++) {
-            bulls += "🐮";
-            if (i === 3) bulls += "<br>"; 
-        }
-
-        el.innerHTML = `
-            <span class="val">${card.value}</span>
-            <div class="bullheads">${bulls}</div>
-        `;
-        return el;
+        if (c.score === 2) scoreClass = "score-2";
+        if (c.score === 3) scoreClass = "score-3";
+        if (c.score === 5) scoreClass = "score-5";
+        if (c.score === 7) scoreClass = "score-7";
+        div.className = `card ${scoreClass}`;
+        div.innerHTML = `<span style="margin-top:2px">${c.value}</span><div class="bullheads">${'🐮'.repeat(c.score > 3 ? 3 : c.score)}</div>`;
+        return div;
     }
 
-    function updateUIStatus(state) {
-        const readyBtn = document.getElementById("ready-btn");
-        const restartBtn = document.getElementById("restart-btn");
-        const instruction = document.getElementById("instruction");
-        
-        const me = state.players[myId];
-
-        if (state.status === "waiting") {
-            readyBtn.style.display = "inline-block";
-            restartBtn.style.display = "none";
-            readyBtn.disabled = me && me.ready;
-            readyBtn.innerText = me && me.ready ? "等待其他人..." : "准备 / Ready";
-            instruction.style.display = "none";
-        } else if (state.status === "finished") {
-            readyBtn.style.display = "none";
-            restartBtn.style.display = "inline-block";
-            instruction.style.display = "block";
-            instruction.innerText = "游戏结束！分数最低者获胜。";
-        } else {
-            readyBtn.style.display = "none";
-            restartBtn.style.display = "none";
-        }
-
-        if (state.status === "choosing_row") {
-            instruction.style.display = "block";
-            if (state.pendingPlayerId === myId) {
-                instruction.style.background = "#e74c3c";
-                instruction.innerHTML = `⚠️ 你的牌 <strong>${state.pendingCard.value}</strong> 太小了！请点击桌面任意一行将其收走。`;
-            } else {
-                const pendingName = state.players[state.pendingPlayerId]?.name || "某人";
-                instruction.style.background = "#d35400";
-                instruction.innerText = `等待 ${pendingName} 选择收牌行...`;
-            }
-        } else if (state.status === "playing") {
-             instruction.style.display = "none";
-        }
-    }
-
-    // --- Actions ---
-
-    function sendReady() {
-        ws.send(JSON.stringify({ type: "ready", value: 0 }));
-    }
-
-    function playCard(val) {
-        const cards = document.querySelectorAll("#hand .card");
-        cards.forEach(c => {
-            if (parseInt(c.querySelector('.val').innerText) === val) c.classList.add("selected");
-            else c.classList.remove("selected");
+    // --- 辅助 ---
+    function sendReady() { ws.send(JSON.stringify({type: "ready"})); }
+    function sendRestart() { ws.send(JSON.stringify({type: "restart"})); }
+    function showStats() { document.getElementById("stats-modal").style.display = "flex"; renderStats(); }
+    function closeStats() { document.getElementById("stats-modal").style.display = "none"; }
+    function renderStats() {
+        const tbody = document.getElementById("stats-body");
+        tbody.innerHTML = "";
+        roomStats.forEach((s, i) => {
+            tbody.innerHTML += `<tr><td>${i+1}</td><td>${s.name}</td><td>${s.totalGames}</td><td>${s.totalScore}</td></tr>`;
         });
-        ws.send(JSON.stringify({ type: "play_card", value: val }));
     }
-
-    function chooseRow(index) {
-        if (confirm(`确定收走第 ${index + 1} 行吗？`)) {
-            ws.send(JSON.stringify({ type: "choose_row", value: index }));
-        }
-    }
-
-    function sendRestart() {
-        ws.send(JSON.stringify({ type: "restart", value: 0 }));
-    }
-
     function log(msg) {
-        const logDiv = document.getElementById("log");
-        const p = document.createElement("div");
-        p.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        logDiv.prepend(p);
+        const d = document.getElementById("log");
+        d.innerHTML = `<div>${msg}</div>` + d.innerHTML;
     }
 </script>
-
 </body>
 </html>
