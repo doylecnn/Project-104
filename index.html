@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take 5 / 谁是牛头王</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        /* 登录遮罩 */
+        #login-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(44, 62, 80, 0.95); z-index: 1000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .login-box {
+            background: white; padding: 30px; border-radius: 10px; color: #333; text-align: center; width: 300px;
+        }
+        .login-box input {
+            width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px;
+        }
+        
+        /* 游戏区域 */
+        .game-board { background-color: #34495e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .row { 
+            display: flex; margin-bottom: 10px; align-items: center; height: 75px; 
+            background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; border: 2px solid transparent; transition: all 0.2s;
+        }
+        .row.selectable { border-color: #e74c3c; cursor: pointer; background: rgba(231, 76, 60, 0.2); }
+        .row.selectable:hover { background: rgba(231, 76, 60, 0.4); }
+
+        /* 卡牌样式 */
+        .card {
+            width: 45px; height: 65px; background-color: #ecf0f1; color: #2c3e50;
+            border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            font-weight: bold; margin-right: 8px; font-size: 16px; position: relative;
+            border: 2px solid #bdc3c7; padding: 2px; user-select: none;
+        }
+        .card .val { margin-top: 2px; }
+        .card .bullheads { font-size: 10px; line-height: 10px; text-align: center; margin-bottom: 2px; color: #c0392b; letter-spacing: -1px;}
+        
+        .card.score-1 { border-color: #bdc3c7; }
+        .card.score-2 { border-color: #3498db; background-color: #d6eaf8; }
+        .card.score-3 { border-color: #f1c40f; background-color: #fcf3cf; }
+        .card.score-5 { border-color: #e67e22; background-color: #fad7a0; }
+        .card.score-7 { border-color: #e74c3c; background-color: #f5b7b1; color: #c0392b; }
+
+        .hand { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; justify-content: center; min-height: 80px;}
+        .hand .card { width: 55px; height: 80px; font-size: 20px; cursor: pointer; transition: transform 0.2s; }
+        .hand .card:hover { transform: translateY(-10px); background-color: #fff; }
+        .hand .card.selected { background-color: #2ecc71; color: white; border-color: #27ae60; transform: translateY(-15px); }
+        .hand .card.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .status-bar { display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;}
+        .player-list { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
+        .player-tag { background: #16a085; padding: 8px 15px; border-radius: 8px; font-size: 14px; min-width: 80px;}
+        .player-tag.me { border: 2px solid #f1c40f; box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); }
+        .player-tag.ready { background: #27ae60; }
+        .player-tag.choosing { background: #e74c3c; animation: pulse 1s infinite; }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #e67e22; border: none; color: white; border-radius: 5px; }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn-green { background: #27ae60; width: 100%; }
+        
+        #log { height: 120px; overflow-y: scroll; background: rgba(0,0,0,0.3); padding: 10px; font-size: 13px; margin-top: 20px; border-radius: 5px; font-family: monospace;}
+        #instruction { background: #d35400; padding: 10px; text-align: center; border-radius: 5px; margin-bottom: 15px; display: none; font-weight: bold;}
+    </style>
+</head>
+<body>
+
+<!-- 登录/欢迎界面 -->
+<div id="login-screen">
+    <div class="login-box">
+        <h2>🐮 谁是牛头王</h2>
+        <p>请输入你的名字加入游戏</p>
+        <input type="text" id="username-input" placeholder="你的昵称" maxlength="10">
+        <button class="btn-green" onclick="doLogin()">加入游戏</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="status-bar">
+        <h2>🐮 谁是牛头王</h2>
+        <div id="connection-status">🔴 未连接</div>
+    </div>
+
+    <div id="instruction"></div>
+
+    <div id="lobby" style="text-align: center; margin-bottom: 20px;">
+        <button id="ready-btn" onclick="sendReady()">准备 / Ready</button>
+        <button id="restart-btn" onclick="sendRestart()" style="display:none; background-color: #c0392b;">重新开始</button>
+    </div>
+
+    <div class="player-list" id="player-list"></div>
+
+    <div class="game-board" id="board">
+        <div class="row">等待游戏开始...</div>
+    </div>
+
+    <h3>你的手牌</h3>
+    <div class="hand" id="hand"></div>
+
+    <div id="log"></div>
+</div>
+
+<script>
+    let ws;
+    let myId = "";
+    let myName = "";
+    let gameState = null;
+    let myHand = [];
+
+    // 页面加载时检查是否已有登录信息
+    window.onload = function() {
+        const storedId = sessionStorage.getItem("take5_uid");
+        const storedName = sessionStorage.getItem("take5_name");
+        
+        if (storedId && storedName) {
+            myId = storedId;
+            myName = storedName;
+            document.getElementById("login-screen").style.display = "none";
+            connect();
+        }
+    };
+
+    function doLogin() {
+        const input = document.getElementById("username-input");
+        const name = input.value.trim();
+        if (!name) return alert("请输入名字");
+
+        // 生成新ID
+        myId = "user_" + Math.random().toString(36).substr(2, 9);
+        myName = name;
+
+        // 存入 SessionStorage
+        sessionStorage.setItem("take5_uid", myId);
+        sessionStorage.setItem("take5_name", myName);
+
+        document.getElementById("login-screen").style.display = "none";
+        connect();
+    }
+
+    function connect() {
+        ws = new WebSocket("ws://" + window.location.host + "/ws");
+
+        ws.onopen = () => {
+            document.getElementById("connection-status").innerText = "🟢 已连接";
+            log("连接服务器成功...");
+            // 连接建立后，立即发送登录包
+            ws.send(JSON.stringify({
+                type: "login",
+                id: myId,
+                payload: myName
+            }));
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "state") {
+                handleStateUpdate(msg.payload);
+            } else if (msg.type === "info") {
+                log("📢 " + msg.payload);
+            }
+        };
+
+        ws.onclose = () => {
+            document.getElementById("connection-status").innerText = "🔴 断开连接";
+        };
+    }
+
+    function handleStateUpdate(payload) {
+        const publicState = payload.publicState;
+        myHand = payload.myHand;
+        // myId 已经在本地有了，不过可以确认一下
+        gameState = publicState;
+
+        renderPlayers(publicState.players, publicState.pendingPlayerId);
+        renderBoard(publicState.rows, publicState.status, publicState.pendingPlayerId);
+        renderHand(myHand, publicState.status);
+        updateUIStatus(publicState);
+    }
+
+    function renderPlayers(players, pendingPid) {
+        const container = document.getElementById("player-list");
+        container.innerHTML = "";
+        
+        let pList = Object.values(players);
+        // 把自己排在第一个
+        pList.sort((a, b) => (a.id === myId ? -1 : 1));
+
+        pList.forEach(p => {
+            const div = document.createElement("div");
+            let statusClass = "";
+            let statusText = "";
+
+            if (gameState.status === "waiting") {
+                statusText = p.ready ? "已准备" : "未准备";
+                if(p.ready) statusClass = "ready";
+            } else if (gameState.status === "playing") {
+                statusText = p.hasSelected ? "✅ 已出牌" : "🤔 思考中";
+            } else if (gameState.status === "choosing_row") {
+                if (p.id === pendingPid) {
+                    statusClass = "choosing";
+                    statusText = "😱 选行中...";
+                } else {
+                    statusText = "👀 围观";
+                }
+            } else if (gameState.status === "finished") {
+                statusText = "结束";
+            }
+
+            div.className = `player-tag ${p.id === myId ? 'me' : ''} ${statusClass}`;
+            div.innerHTML = `
+                <div style="font-weight:bold; margin-bottom:4px;">${p.name}</div>
+                <div>分数: ${p.score} 🐮</div>
+                <div style="font-size:12px; margin-top:4px; opacity:0.9">${statusText}</div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function renderBoard(rows, status, pendingPid) {
+        const board = document.getElementById("board");
+        board.innerHTML = "";
+        if (!rows || rows.length === 0) return;
+
+        const isMyTurnToChoose = (status === "choosing_row" && pendingPid === myId);
+
+        rows.forEach((row, index) => {
+            const rowDiv = document.createElement("div");
+            rowDiv.className = "row";
+            
+            if (isMyTurnToChoose) {
+                rowDiv.classList.add("selectable");
+                rowDiv.onclick = () => chooseRow(index);
+                rowDiv.title = "点击收走这一行";
+            }
+            
+            if (row.cards) {
+                row.cards.forEach(card => {
+                    rowDiv.appendChild(createCardElement(card));
+                });
+            }
+            
+            const info = document.createElement("span");
+            info.style.marginLeft = "auto";
+            info.style.fontSize = "12px";
+            info.style.opacity = "0.5";
+            info.innerText = `${row.cards.length}/5`;
+            rowDiv.appendChild(info);
+
+            board.appendChild(rowDiv);
+        });
+    }
+
+    function renderHand(hand, status) {
+        const container = document.getElementById("hand");
+        container.innerHTML = "";
+        
+        if (!hand) return;
+
+        hand.forEach(card => {
+            const el = createCardElement(card);
+            const me = gameState.players[myId];
+            // 只有在 playing 阶段且自己没出过牌才能点
+            // 注意：如果我是旁观者（hand为空），这里也不会渲染
+            const canPlay = status === "playing" && me && !me.hasSelected;
+            
+            if (canPlay) {
+                el.onclick = () => playCard(card.value);
+            } else {
+                el.classList.add("disabled");
+            }
+            container.appendChild(el);
+        });
+    }
+
+    function createCardElement(card) {
+        const el = document.createElement("div");
+        let scoreClass = "score-1";
+        if (card.score === 2) scoreClass = "score-2";
+        if (card.score === 3) scoreClass = "score-3";
+        if (card.score === 5) scoreClass = "score-5";
+        if (card.score === 7) scoreClass = "score-7";
+
+        el.className = `card ${scoreClass}`;
+        
+        let bulls = "";
+        for(let i=0; i<card.score; i++) {
+            bulls += "🐮";
+            if (i === 3) bulls += "<br>"; 
+        }
+
+        el.innerHTML = `
+            <span class="val">${card.value}</span>
+            <div class="bullheads">${bulls}</div>
+        `;
+        return el;
+    }
+
+    function updateUIStatus(state) {
+        const readyBtn = document.getElementById("ready-btn");
+        const restartBtn = document.getElementById("restart-btn");
+        const instruction = document.getElementById("instruction");
+        
+        const me = state.players[myId];
+
+        if (state.status === "waiting") {
+            readyBtn.style.display = "inline-block";
+            restartBtn.style.display = "none";
+            readyBtn.disabled = me && me.ready;
+            readyBtn.innerText = me && me.ready ? "等待其他人..." : "准备 / Ready";
+            instruction.style.display = "none";
+        } else if (state.status === "finished") {
+            readyBtn.style.display = "none";
+            restartBtn.style.display = "inline-block";
+            instruction.style.display = "block";
+            instruction.innerText = "游戏结束！分数最低者获胜。";
+        } else {
+            readyBtn.style.display = "none";
+            restartBtn.style.display = "none";
+        }
+
+        if (state.status === "choosing_row") {
+            instruction.style.display = "block";
+            if (state.pendingPlayerId === myId) {
+                instruction.style.background = "#e74c3c";
+                instruction.innerHTML = `⚠️ 你的牌 <strong>${state.pendingCard.value}</strong> 太小了！请点击桌面任意一行将其收走。`;
+            } else {
+                const pendingName = state.players[state.pendingPlayerId]?.name || "某人";
+                instruction.style.background = "#d35400";
+                instruction.innerText = `等待 ${pendingName} 选择收牌行...`;
+            }
+        } else if (state.status === "playing") {
+             instruction.style.display = "none";
+        }
+    }
+
+    // --- Actions ---
+
+    function sendReady() {
+        ws.send(JSON.stringify({ type: "ready", value: 0 }));
+    }
+
+    function playCard(val) {
+        const cards = document.querySelectorAll("#hand .card");
+        cards.forEach(c => {
+            if (parseInt(c.querySelector('.val').innerText) === val) c.classList.add("selected");
+            else c.classList.remove("selected");
+        });
+        ws.send(JSON.stringify({ type: "play_card", value: val }));
+    }
+
+    function chooseRow(index) {
+        if (confirm(`确定收走第 ${index + 1} 行吗？`)) {
+            ws.send(JSON.stringify({ type: "choose_row", value: index }));
+        }
+    }
+
+    function sendRestart() {
+        ws.send(JSON.stringify({ type: "restart", value: 0 }));
+    }
+
+    function log(msg) {
+        const logDiv = document.getElementById("log");
+        const p = document.createElement("div");
+        p.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logDiv.prepend(p);
+    }
+</script>
+
+</body>
+</html>
