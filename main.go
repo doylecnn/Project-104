@@ -9,13 +9,12 @@ import (
 	"net/http"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// --- 数据库相关 (保持不变，略微精简展示) ---
+// --- 数据库相关 ---
 var db *sql.DB
 
 func initDB() {
@@ -24,13 +23,14 @@ func initDB() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// 建表语句保持不变...
 	sqlStmt := `CREATE TABLE IF NOT EXISTS game_history (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id TEXT, player_name TEXT, score INTEGER, played_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
+	sqlStmt += `CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, owner_id TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
+	sqlStmt += `CREATE TABLE IF NOT EXISTS room_snapshots (room_id TEXT PRIMARY KEY, state_json TEXT);`
+	sqlStmt += `CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, id TEXT);`
 	db.Exec(sqlStmt)
 }
 
 func recordGameResult(roomID string, players map[string]*Player) {
-	// 保持不变...
 	tx, _ := db.Begin()
 	stmt, _ := tx.Prepare("INSERT INTO game_history(room_id, player_name, score) VALUES(?, ?, ?)")
 	defer stmt.Close()
@@ -46,14 +46,35 @@ type PlayerStat struct {
 	TotalScore int    `json:"totalScore"`
 }
 
+func getOrCreateUserID(name string) string {
+	var id string
+	// 尝试查找现有用户
+	err := db.QueryRow("SELECT id FROM users WHERE name = ?", name).Scan(&id)
+	if err == nil {
+		return id // 找到了，返回旧ID
+	}
+
+	// 没找到，生成新ID (简单的 UUID 模拟)
+	id = fmt.Sprintf("user_%d_%d", rand.Int(), rand.Int())
+
+	// 插入新用户
+	_, err = db.Exec("INSERT INTO users (name, id) VALUES (?, ?)", name, id)
+	if err != nil {
+		// 如果并发插入导致冲突，重新查询一次
+		db.QueryRow("SELECT id FROM users WHERE name = ?", name).Scan(&id)
+	}
+	return id
+}
+
 func getRoomStats(roomID string) []PlayerStat {
-	// 保持不变...
+	stats := make([]PlayerStat, 0)
+
 	rows, err := db.Query(`SELECT player_name, COUNT(*) as games, SUM(score) as total_score FROM game_history WHERE room_id = ? GROUP BY player_name ORDER BY total_score ASC`, roomID)
 	if err != nil {
-		return []PlayerStat{}
+		return stats
 	}
 	defer rows.Close()
-	var stats []PlayerStat
+
 	for rows.Next() {
 		var s PlayerStat
 		rows.Scan(&s.Name, &s.TotalGames, &s.TotalScore)
@@ -65,8 +86,8 @@ func getRoomStats(roomID string) []PlayerStat {
 // --- 核心数据结构 ---
 
 type Card struct {
-	Value int `json:"value"`
-	Score int `json:"score"`
+	Value   int    `json:"value"`
+	Score   int    `json:"score"`
 	OwnerID string `json:"ownerId,omitempty"`
 }
 
@@ -98,10 +119,9 @@ type Room struct {
 	Deck        []Card
 	TurnQueue   []PlayAction
 	PendingPlay *PlayAction
-	Mutex       sync.Mutex
+	Mutex       sync.Mutex `json:"-"`
 }
 
-// 用于前端大厅展示的房间摘要
 type RoomSummary struct {
 	ID          string `json:"id"`
 	OwnerName   string `json:"ownerName"`
@@ -131,10 +151,66 @@ var (
 	rooms     = make(map[string]*Room)
 	roomsLock sync.Mutex
 
-	// 大厅连接管理 (用于广播房间列表)
+	// 大厅连接管理
 	lobbyConns = make(map[*websocket.Conn]bool)
 	lobbyLock  sync.Mutex
 )
+
+func loadRoomsFromDB() {
+	rows, err := db.Query("SELECT id, owner_id, status FROM rooms")
+	if err != nil {
+		log.Println("Error loading rooms:", err)
+		return
+	}
+	defer rows.Close()
+
+	roomsLock.Lock()
+	defer roomsLock.Unlock()
+
+	for rows.Next() {
+		var id, ownerId, status string
+		rows.Scan(&id, &ownerId, &status)
+
+		var stateJSON string
+		err := db.QueryRow("SELECT state_json FROM room_snapshots WHERE room_id = ?", id).Scan(&stateJSON)
+
+		newRoom := &Room{}
+		if err == nil && stateJSON != "" {
+			if err := json.Unmarshal([]byte(stateJSON), newRoom); err != nil {
+				log.Printf("Failed to unmarshal room %s: %v", id, err)
+				continue
+			}
+			newRoom.OwnerID = ownerId
+			newRoom.ID = id
+		} else {
+			newRoom = &Room{
+				ID: id, OwnerID: ownerId, Status: status,
+				Players: make(map[string]*Player),
+			}
+			// 初始化 Rows 防止 null
+			for i := 0; i < 4; i++ {
+				newRoom.Rows[i].Cards = make([]Card, 0)
+			}
+		}
+		rooms[id] = newRoom
+	}
+	log.Printf("Loaded %d rooms from database", len(rooms))
+}
+
+func persistRoom(r *Room) {
+	data, err := json.Marshal(r)
+	if err != nil {
+		log.Println("Error marshaling room:", err)
+		return
+	}
+	db.Exec("INSERT OR REPLACE INTO rooms (id, owner_id, status) VALUES (?, ?, ?)", r.ID, r.OwnerID, r.Status)
+	db.Exec("INSERT OR REPLACE INTO room_snapshots (room_id, state_json) VALUES (?, ?)", r.ID, string(data))
+}
+
+func deleteRoomDB(roomID string) {
+	db.Exec("DELETE FROM rooms WHERE id = ?", roomID)
+	db.Exec("DELETE FROM room_snapshots WHERE room_id = ?", roomID)
+}
 
 // --- 大厅广播逻辑 ---
 
@@ -143,15 +219,12 @@ func broadcastRoomList() {
 	roomsLock.Lock()
 	for id, r := range rooms {
 		r.Mutex.Lock()
-		ownerName := "未知"
+
+		ownerName := r.OwnerID
 		if owner, ok := r.Players[r.OwnerID]; ok {
 			ownerName = owner.Name
-		} else if len(r.Players) > 0 {
-			// 如果房主跑了，取第一个人显示
-			for _, p := range r.Players {
-				ownerName = p.Name
-				break
-			}
+		} else if r.OwnerID == "" {
+			ownerName = "无房主"
 		}
 
 		list = append(list, RoomSummary{
@@ -164,7 +237,6 @@ func broadcastRoomList() {
 	}
 	roomsLock.Unlock()
 
-	// 按房间号排序
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 
 	msg := Message{Type: "room_list", Payload: list}
@@ -177,7 +249,7 @@ func broadcastRoomList() {
 	lobbyLock.Unlock()
 }
 
-// --- 游戏逻辑辅助 (精简版，核心逻辑同上一次) ---
+// --- 游戏逻辑辅助 ---
 
 func getScore(val int) int {
 	if val == 55 {
@@ -200,18 +272,16 @@ func (r *Room) initDeck() {
 	for i := 1; i <= 104; i++ {
 		r.Deck = append(r.Deck, Card{Value: i, Score: getScore(i)})
 	}
-	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(r.Deck), func(i, j int) { r.Deck[i], r.Deck[j] = r.Deck[j], r.Deck[i] })
 }
 
 func (r *Room) broadcastState() {
-	// 构建公共状态
 	publicPlayers := make(map[string]interface{})
 	for id, p := range r.Players {
 		publicPlayers[id] = map[string]interface{}{
 			"id": p.ID, "name": p.Name, "score": p.Score, "ready": p.Ready,
 			"hasSelected": p.SelectedCard != nil, "handSize": len(p.Hand),
-			"isOwner": (id == r.OwnerID), // 告诉前端谁是房主
+			"isOwner": (id == r.OwnerID),
 		}
 	}
 	stateMap := map[string]interface{}{
@@ -225,12 +295,21 @@ func (r *Room) broadcastState() {
 
 	for _, p := range r.Players {
 		if p.Conn != nil {
-			p.Conn.WriteJSON(Message{Type: "state", Payload: map[string]interface{}{
-				"publicState": stateMap, "myHand": p.Hand, "roomId": r.ID,
-			}})
+			payload := map[string]interface{}{
+				"publicState": stateMap,
+				"myHand":      p.Hand,
+				"roomId":      r.ID,
+			}
+			// 如果玩家已选牌，告诉他选的是哪张，以便前端恢复状态
+			if p.SelectedCard != nil {
+				payload["mySelectedCard"] = p.SelectedCard.Value
+			}
+
+			p.Conn.WriteJSON(Message{Type: "state", Payload: payload})
 		}
 	}
-	// 每次状态改变（比如人数变化），也广播给大厅更新列表
+
+	persistRoom(r)
 	go broadcastRoomList()
 }
 
@@ -251,10 +330,6 @@ func (r *Room) broadcastStats() {
 	}
 }
 
-// --- 游戏流程控制 (保持不变，省略具体实现以节省篇幅，逻辑同上一次回答) ---
-// 包含 startGame, prepareTurnResolution, processTurnQueue, handleRowChoice 等方法
-// 请确保将上一次回答中的这些方法完整保留在最终代码中。
-// 这里只列出 startGame 示意，其他方法必须存在。
 func (r *Room) startGame() {
 	r.initDeck()
 	r.Status = "playing"
@@ -284,16 +359,12 @@ func (r *Room) startGame() {
 	r.broadcastState()
 }
 
-// 必须包含 processTurnQueue, handleRowChoice 等方法...
-// (为节省 Token，此处假设你已经合并了上一个版本的游戏逻辑代码)
-// ... [Insert Game Logic Methods Here] ...
-// 为了代码完整性，我将在最后提供一个简化的占位符，实际使用请合并。
-func (r *Room) prepareTurnResolution() { /* 同上个版本 */
+func (r *Room) prepareTurnResolution() {
 	r.TurnQueue = make([]PlayAction, 0)
 	for id, p := range r.Players {
 		if p.SelectedCard != nil {
 			card := *p.SelectedCard
-			card.OwnerID = id 
+			card.OwnerID = id
 			r.TurnQueue = append(r.TurnQueue, PlayAction{PlayerID: id, Card: card})
 			p.SelectedCard = nil
 		}
@@ -301,12 +372,10 @@ func (r *Room) prepareTurnResolution() { /* 同上个版本 */
 	sort.Slice(r.TurnQueue, func(i, j int) bool { return r.TurnQueue[i].Card.Value < r.TurnQueue[j].Card.Value })
 	r.processTurnQueue()
 }
+
 func (r *Room) processTurnQueue() {
-	// 如果处理队列为空，说明本轮出牌/结算全部完成
 	if len(r.TurnQueue) == 0 {
 		r.PendingPlay = nil
-
-		// 检查所有玩家手牌是否为空
 		allEmpty := true
 		for _, p := range r.Players {
 			if len(p.Hand) > 0 {
@@ -314,28 +383,21 @@ func (r *Room) processTurnQueue() {
 				break
 			}
 		}
-
-		// --- 修复点开始 ---
-		// 只要手牌全空，无论当前状态是什么（playing 或 choosing_row），都视为游戏结束
 		if allEmpty {
 			r.Status = "finished"
 			r.broadcastInfo("游戏结束！正在结算积分...")
 			recordGameResult(r.ID, r.Players)
 			r.broadcastStats()
 		} else {
-			// 手牌没空，继续下一轮
 			r.Status = "playing"
 		}
-		// --- 修复点结束 ---
-
 		r.broadcastState()
 		return
 	}
 
-	// 下面是正常的出牌判定逻辑 (保持不变)
 	currentPlay := r.TurnQueue[0]
 	card := currentPlay.Card
-	
+
 	player := r.Players[currentPlay.PlayerID]
 	if player != nil {
 		newHand := make([]Card, 0)
@@ -388,7 +450,8 @@ func (r *Room) processTurnQueue() {
 		r.broadcastState()
 	}
 }
-func (r *Room) handleRowChoice(playerID string, rowIdx int) { /* 同上个版本 */
+
+func (r *Room) handleRowChoice(playerID string, rowIdx int) {
 	if r.Status != "choosing_row" || r.PendingPlay == nil || r.PendingPlay.PlayerID != playerID || rowIdx < 0 || rowIdx > 3 {
 		return
 	}
@@ -407,17 +470,14 @@ func (r *Room) handleRowChoice(playerID string, rowIdx int) { /* 同上个版本
 
 // --- HTTP Handlers ---
 
-// 检查房间是否存在
 func checkRoomHandler(w http.ResponseWriter, r *http.Request) {
 	roomID := r.URL.Query().Get("id")
 	roomsLock.Lock()
 	_, exists := rooms[roomID]
 	roomsLock.Unlock()
-
 	json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
 }
 
-// 大厅 WebSocket
 func handleLobbyWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -428,7 +488,6 @@ func handleLobbyWS(w http.ResponseWriter, r *http.Request) {
 	lobbyConns[ws] = true
 	lobbyLock.Unlock()
 
-	// 连上立马发一次列表
 	go broadcastRoomList()
 
 	defer func() {
@@ -439,14 +498,12 @@ func handleLobbyWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for {
-		// 大厅只发不收，或者接收一些简单的Ping
 		if _, _, err := ws.ReadMessage(); err != nil {
 			break
 		}
 	}
 }
 
-// 游戏 WebSocket
 func handleGameWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -460,25 +517,10 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 		if currentRoom != nil {
 			currentRoom.Mutex.Lock()
 			if p, ok := currentRoom.Players[currentPlayerID]; ok {
-				// 玩家断开
 				p.Conn = nil
-				// 可以在这里做更复杂的逻辑：如果房间没人了，是否删除？
-				// 简单起见：如果没人了，删除房间
-				activeCount := 0
-				for _, pl := range currentRoom.Players {
-					if pl.Conn != nil {
-						activeCount++
-					}
-				}
-
-				// 真正移除玩家数据（可选，或者保留数据等待重连）
-				// 这里我们选择：断开连接不移除数据，除非房主手动踢人或销毁
-				// 但为了列表准确，我们可以标记离线
-
 				log.Printf("Player %s disconnected from room %s", p.Name, currentRoom.ID)
 			}
 			currentRoom.Mutex.Unlock()
-			// 广播人数变化
 			go broadcastRoomList()
 		}
 		ws.Close()
@@ -492,8 +534,8 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if action.Type == "create_room" {
-			// 创建房间逻辑
-			uid := action.ID
+			name := action.Payload
+			uid := getOrCreateUserID(name) // 获取唯一绑定的 ID
 			roomID := action.RoomID
 
 			roomsLock.Lock()
@@ -505,18 +547,25 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 			newRoom := &Room{
 				ID: roomID, OwnerID: uid, Players: make(map[string]*Player), Status: "waiting",
 			}
+			for i := 0; i < 4; i++ {
+				newRoom.Rows[i].Cards = make([]Card, 0)
+			}
 			rooms[roomID] = newRoom
+			persistRoom(newRoom)
 			roomsLock.Unlock()
 
-			// 自动执行登录逻辑
+			// 自动转为登录流程，更新 action 数据
 			action.Type = "login"
-			// Fallthrough to login logic...
+			action.ID = uid // 强制使用后端生成的 ID
+			action.Payload = name
 		}
 
 		if action.Type == "login" {
-			uid := action.ID
 			name := action.Payload
+			uid := getOrCreateUserID(name) // 获取唯一绑定的 ID
 			roomID := action.RoomID
+
+			ws.WriteJSON(Message{Type: "identity", Payload: map[string]string{"id": uid, "name": name}})
 
 			roomsLock.Lock()
 			room, exists := rooms[roomID]
@@ -532,17 +581,6 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 
 			room.Mutex.Lock()
 
-			// 如果房间空了，第一个进来的人变成房主
-			activeCount := 0
-			for _, p := range room.Players {
-				if p.Conn != nil {
-					activeCount++
-				}
-			}
-			if activeCount == 0 && len(room.Players) > 0 {
-				room.OwnerID = uid
-			}
-
 			if existingPlayer, ok := room.Players[uid]; ok {
 				existingPlayer.Conn = ws
 				existingPlayer.Name = name
@@ -552,24 +590,20 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 			} else {
 				newPlayer := &Player{ID: uid, Name: name, Conn: ws, Score: 0, Ready: false}
 				room.Players[uid] = newPlayer
-				// 如果是第一个玩家，设为房主
-				if len(room.Players) == 1 {
+				if len(room.Players) == 1 && room.OwnerID == "" {
 					room.OwnerID = uid
 				}
 				room.Mutex.Unlock()
 				room.broadcastState()
 				room.broadcastStats()
 			}
-			go broadcastRoomList() // 更新大厅列表人数
+			go broadcastRoomList()
 
 		} else if action.Type == "delete_room" {
-			// 删除房间
 			if currentRoom != nil {
 				currentRoom.Mutex.Lock()
 				if currentRoom.OwnerID == currentPlayerID {
-					// 通知所有人房间被解散
 					currentRoom.broadcastInfo("房主解散了房间")
-					// 发送特殊消息让前端退回大厅
 					for _, p := range currentRoom.Players {
 						if p.Conn != nil {
 							p.Conn.WriteJSON(Message{Type: "room_closed", Payload: ""})
@@ -581,10 +615,11 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 					roomsLock.Lock()
 					delete(rooms, currentRoom.ID)
 					roomsLock.Unlock()
+					deleteRoomDB(currentRoom.ID)
 
-					currentRoom = nil // 避免 defer 里的逻辑报错
+					currentRoom = nil
 					go broadcastRoomList()
-					return // 结束连接循环
+					return
 				} else {
 					currentRoom.Mutex.Unlock()
 					ws.WriteJSON(Message{Type: "info", Payload: "只有房主可以解散房间"})
@@ -595,31 +630,41 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 			// 玩家主动退出
 			if currentRoom != nil {
 				currentRoom.Mutex.Lock()
-				delete(currentRoom.Players, currentPlayerID)
+				if currentRoom.Status == "waiting" || currentRoom.Status == "finished" {
+					delete(currentRoom.Players, currentPlayerID)
 
-				// 如果房主走了，移交房权
-				if currentRoom.OwnerID == currentPlayerID {
-					if len(currentRoom.Players) > 0 {
-						for pid := range currentRoom.Players {
-							currentRoom.OwnerID = pid
-							break
+					// 只有真正删除了玩家，才需要移交房主权限
+					if currentRoom.OwnerID == currentPlayerID {
+						if len(currentRoom.Players) > 0 {
+							for pid, p := range currentRoom.Players {
+								currentRoom.OwnerID = pid
+								currentRoom.broadcastInfo(fmt.Sprintf("房主离开了，房主移交给 %s", p.Name))
+								break
+							}
+						} else {
+							// 房间空了，状态重置
+							currentRoom.Status = "waiting"
 						}
-						currentRoom.broadcastInfo("房主离开了，房主移交")
-					} else {
-						// 没人了，删房间
-						currentRoom.Mutex.Unlock() // 先解锁
-						roomsLock.Lock()
-						delete(rooms, currentRoom.ID)
-						roomsLock.Unlock()
-						go broadcastRoomList()
-						return
+					}
+				} else {
+					// 游戏中退出：不删除数据，仅通知
+					// defer 里的逻辑会将 p.Conn 设为 nil
+					if p, ok := currentRoom.Players[currentPlayerID]; ok {
+						currentRoom.broadcastInfo(fmt.Sprintf("%s 暂时离开了游戏 (手牌已保留)", p.Name))
 					}
 				}
-				currentRoom.Mutex.Unlock()
-				currentRoom.broadcastState()
-				go broadcastRoomList()
 
-				currentRoom = nil // 避免 defer 逻辑
+				// 如果还有人，广播状态（这也会触发 broadcastRoomList）
+				if len(currentRoom.Players) > 0 {
+					currentRoom.broadcastState()
+				} else {
+					// 如果没人了，手动触发一次列表更新，确保大厅显示人数为0或处理空房间
+					go broadcastRoomList()
+				}
+
+				currentRoom.Mutex.Unlock()
+
+				currentRoom = nil // 避免 defer 里的逻辑处理
 				return
 			}
 		} else {
@@ -632,7 +677,6 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 					case "ready":
 						if currentRoom.Status == "waiting" {
 							player.Ready = true
-							// 检查开始
 							readyCount := 0
 							allReady := true
 							for _, p := range currentRoom.Players {
@@ -649,7 +693,6 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 					case "play_card":
-						// ... (同上) ...
 						if currentRoom.Status == "playing" && player.SelectedCard == nil {
 							valid := false
 							var selectC Card
@@ -689,6 +732,10 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 								p.Hand = []Card{}
 								p.SelectedCard = nil
 							}
+							// 重置时也需要清空并初始化 Rows
+							for i := 0; i < 4; i++ {
+								currentRoom.Rows[i].Cards = make([]Card, 0)
+							}
 							currentRoom.broadcastState()
 						}
 					}
@@ -702,6 +749,7 @@ func handleGameWS(w http.ResponseWriter, r *http.Request) {
 func main() {
 	initDB()
 	defer db.Close()
+	loadRoomsFromDB()
 
 	http.HandleFunc("/check_room", checkRoomHandler)
 	http.HandleFunc("/lobby_ws", handleLobbyWS)

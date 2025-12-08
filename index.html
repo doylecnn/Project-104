@@ -55,7 +55,7 @@
             to { transform: scale(1); opacity: 1; }
         }
 
-        /* 游戏内样式 (复用之前的) */
+        /* 游戏内样式 */
         .game-header { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 20px; }
         .game-board { background-color: #34495e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
         .row { display: flex; margin-bottom: 10px; align-items: center; height: 75px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; border: 2px solid transparent; }
@@ -187,7 +187,7 @@
 <script>
     let ws;
     let lobbyWs;
-    let myId = sessionStorage.getItem("take5_uid") || "user_" + Math.random().toString(36).substr(2, 9);
+    let myId = sessionStorage.getItem("take5_uid") || ""; 
     let myName = sessionStorage.getItem("take5_name") || "";
     let currentRoomId = "";
     let isOwner = false;
@@ -201,20 +201,15 @@
     let prevPlayersSnapshot = null;
     let lastSubmittedCardRect = null;
 
-    // 初始化
     window.onload = function() {
         sessionStorage.setItem("take5_uid", myId);
         if (myName) document.getElementById("username-input").value = myName;
 
-        // 检查 URL 参数
         const urlParams = new URLSearchParams(window.location.search);
         const roomParam = urlParams.get('room');
 
         if (roomParam) {
-            // 如果有房间号，尝试直接进入
             document.getElementById("new-room-id").value = roomParam;
-            // 自动填充名字后，用户点击进入或者自动进入
-            // 这里我们让用户确认名字后手动点击，或者自动检查
             if (myName) {
                 joinRoom(roomParam);
             } else {
@@ -224,8 +219,6 @@
             connectLobby();
         }
     };
-
-    // --- 大厅逻辑 ---
 
     function connectLobby() {
         if (lobbyWs) return;
@@ -272,21 +265,16 @@
         if (!saveUserInfo()) return;
         const roomId = document.getElementById("new-room-id").value.trim();
         if (!roomId) return alert("请输入房间号");
-
-        // 连接游戏WS并发送创建指令
         connectGameWs(roomId, "create_room");
     }
 
     async function joinRoom(roomId) {
         if (!saveUserInfo()) return;
-        
-        // 先检查房间是否存在
         try {
             const res = await fetch(`/check_room?id=${roomId}`);
             const data = await res.json();
             if (!data.exists) {
                 alert("房间不存在！");
-                // 清除 URL 参数
                 window.history.pushState({}, document.title, "/");
                 connectLobby();
                 return;
@@ -297,11 +285,8 @@
         }
     }
 
-    // --- 游戏连接逻辑 ---
-
     function connectGameWs(roomId, actionType) {
         if (ws) ws.close();
-        
         ws = new WebSocket("ws://" + window.location.host + "/ws");
         
         ws.onopen = () => {
@@ -315,30 +300,33 @@
 
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
-            if (msg.type === "error") {
+            if (msg.type === "identity") {
+                myId = msg.payload.id;
+                myName = msg.payload.name;
+                sessionStorage.setItem("take5_uid", myId);
+                sessionStorage.setItem("take5_name", myName);
+                console.log("Identity confirmed:", myName, myId);
+            } else if (msg.type === "error") {
                 alert(msg.payload);
                 ws.close();
                 ws = null;
             } else if (msg.type === "state") {
-                // 登录成功，切换界面
                 if (document.getElementById("lobby-screen").style.display !== "none") {
                     switchScreen("game");
-                    // 更新 URL
                     const url = new URL(window.location);
                     url.searchParams.set('room', roomId);
                     window.history.pushState({}, '', url);
-                    // 关闭大厅连接节省资源
                     if (lobbyWs) { lobbyWs.close(); lobbyWs = null; }
                 }
                 handleStateUpdate(msg.payload);
             } else if (msg.type === "info") {
                 log(msg.payload);
             } else if (msg.type === "stats") {
-                roomStats = msg.payload;
+                roomStats = msg.payload || [];
                 renderStats();
             } else if (msg.type === "room_closed") {
                 alert("房间已解散");
-                leaveRoom(true); // true = passive leave
+                leaveRoom(true); 
             }
         };
 
@@ -359,12 +347,9 @@
         if (ws) ws.close();
         ws = null;
         currentRoomId = "";
-        
-        // 清除 URL 参数
         window.history.pushState({}, document.title, "/");
-        
         switchScreen("lobby");
-        connectLobby(); // 重新连接大厅
+        connectLobby();
     }
 
     function deleteRoom() {
@@ -380,22 +365,30 @@
         });
     }
 
-    // --- 游戏渲染逻辑 ---
-
     function handleStateUpdate(payload) {
         currentGameState = payload;
         const publicState = payload.publicState;
-        const myHand = payload.myHand;
+        const myHand = payload.myHand || [];
         const status = publicState.status;
         const me = publicState.players[myId] || {};
-        const iHaveSelected = !!me.hasSelected;
-
-        // 仅当服务器告知我未选择或状态离开 playing 时，解除锁定
-        if (!iHaveSelected || status !== "playing") {
-            myConfirmPending = false;
+        if (payload.mySelectedCard !== undefined && payload.mySelectedCard !== null) {
+            mySelectedCardValue = payload.mySelectedCard;
+            myConfirmPending = true; // 标记为已确认，锁定手牌
         }
 
-        // 如果当前选中的牌已经不在手里且没有等待确认，清理本地选中
+        const iHaveSelected = !!me.hasSelected;
+
+        if (!iHaveSelected && status === "playing") {
+             myConfirmPending = false;
+             if (!myConfirmPending) {
+                 // 只有在非等待确认状态下才清除，避免闪烁
+             }
+        }
+        if (status !== "playing" && status !== "choosing_row") {
+            myConfirmPending = false;
+            mySelectedCardValue = null;
+        }
+
         const handValues = myHand.map(c => c.value);
         if (mySelectedCardValue !== null && !handValues.includes(mySelectedCardValue) && !myConfirmPending) {
             mySelectedCardValue = null;
@@ -412,29 +405,22 @@
         renderHand(myHand, status, iHaveSelected);
         updateConfirmButton(status, iHaveSelected);
 
-        // 2. 计算数据差异
         predictedRowIdx = predictRow(mySelectedCardValue, publicState.rows, status);
         renderPredictionMessage(predictedRowIdx);
 
-        // 计算新落地的牌，用于动画和日志
         const landingMap = computeLanding(prevRowsSnapshot, publicState.rows);
         const landingAll = flattenLanding(landingMap);
         const playEvents = diffPlayerPlays(prevPlayersSnapshot, publicState.players, landingAll);
         
-        // 建立 牌值 -> 玩家ID 的映射
         const cardOwnerMap = {};
         playEvents.forEach(ev => { if(ev.cardValue) cardOwnerMap[ev.cardValue] = ev.id; });
 
-        // 3. 渲染棋盘（此时新牌会被渲染在终点，但我们会将其标记为待动画）
-        // 返回一个列表，包含所有需要做动画的 DOM 元素及其对应的牌值
         const animationTargets = renderBoard(publicState.rows, status, publicState.pendingPlayerId, predictedRowIdx, landingMap);
 
-        // 4. 执行动画（关键：此时 DOM 已经更新，可以获取准确的终点坐标）
         if (animationTargets.length > 0) {
             processAnimations(animationTargets, cardOwnerMap);
         }
 
-        // 5. 更新快照和日志
         playEvents.forEach(ev => {
             if (ev.cardValue !== null) {
                 const rowIdx = findLandingRow(landingMap, ev.cardValue);
@@ -445,7 +431,6 @@
         prevRowsSnapshot = snapshotRows(publicState.rows);
         prevPlayersSnapshot = snapshotPlayers(publicState.players);
 
-        // 记录出牌/选行提示
         if (publicState.pendingCard && publicState.pendingPlayerId) {
             const key = `${publicState.pendingPlayerId}-${publicState.pendingCard.value}`;
             if (key !== lastPendingLogKey) {
@@ -456,31 +441,6 @@
             }
         }
         
-        // 状态提示
-        const instruction = document.getElementById("instruction");
-        const readyBtn = document.getElementById("ready-btn");
-        
-        if (status === "waiting") {
-            readyBtn.style.display = "inline-block";
-            const meReady = publicState.players[myId];
-            readyBtn.innerText = (meReady && meReady.ready) ? "等待其他人..." : "准备 / Ready";
-            readyBtn.disabled = (meReady && meReady.ready);
-            instruction.style.display = "none";
-        } else {
-            readyBtn.style.display = "none";
-            if (status === "choosing_row") {
-                instruction.style.display = "block";
-                if (publicState.pendingPlayerId === myId) {
-                    instruction.style.background = "#e74c3c";
-                    instruction.innerHTML = `⚠️ 请选择一行收走！`;
-                } else {
-                    instruction.style.background = "#d35400";
-                    instruction.innerText = `等待某人选行...`;
-                }
-            } else {
-                instruction.style.display = "none";
-            }
-        }
         updateInstructions(status, publicState);
     }
 
@@ -500,7 +460,7 @@
         const board = document.getElementById("board");
         board.innerHTML = "";
         const isMyTurn = (status === "choosing_row" && pendingPid === myId);
-        const animationTargets = []; // 收集需要动画的元素
+        const animationTargets = [];
         
         rows.forEach((row, idx) => {
             const div = document.createElement("div");
@@ -513,64 +473,44 @@
             
             const landingCards = landingMap.get(idx) || [];
             
-            row.cards.forEach(c => {
+            (row.cards || []).forEach(c => {
                 const cardEl = createCard(c);
                 cardEl.dataset.cardValue = c.value;
-                
-            const isNew = landingCards.some(lc => lc.value === c.value);
-
-            if (isNew) {
-                cardEl.style.opacity = "0"; 
-                animationTargets.push({
-                    element: cardEl,
-                    value: c.value
-                });
-            } else {
-                cardEl.style.opacity = "1";
-            }
-            div.appendChild(cardEl);
+                const isNew = landingCards.some(lc => lc.value === c.value);
+                if (isNew) {
+                    cardEl.style.opacity = "0"; 
+                    animationTargets.push({ element: cardEl, value: c.value });
+                } else {
+                    cardEl.style.opacity = "1";
+                }
+                div.appendChild(cardEl);
+            });
+            board.appendChild(div);
         });
-        board.appendChild(div);
-    });
-    
-    return animationTargets;
-}
-
-    // --- 核心修复：动画处理函数 ---
+        return animationTargets;
+    }
 
     function processAnimations(targets, cardOwnerMap) {
-        // 1. 全局强制重排，确保 board 里的占位元素位置准确
         document.body.offsetHeight; 
-
         targets.forEach(target => {
             const cardEl = target.element;
             const value = target.value;
             const ownerId = cardOwnerMap[value];
-
-            // 获取终点坐标 (相对于视口)
             const endRect = cardEl.getBoundingClientRect();
-
-            // 获取起点坐标
             let startRect = null;
 
             if (ownerId === myId) {
-                if (lastSubmittedCardRect) {
-                    startRect = lastSubmittedCardRect;
-                }
+                if (lastSubmittedCardRect) startRect = lastSubmittedCardRect;
             } else if (ownerId) {
                 const playerEl = document.querySelector(`.player-tag[data-uid="${ownerId}"]`);
-                if (playerEl) {
-                    startRect = playerEl.getBoundingClientRect();
-                }
+                if (playerEl) startRect = playerEl.getBoundingClientRect();
             }
 
-            // 如果找不到起点，直接显示，不做动画
             if (!startRect) {
                 cardEl.style.opacity = "1";
                 return;
             }
 
-            // 3. 创建 Ghost 元素
             const ghost = cardEl.cloneNode(true);
             ghost.style.transition = "none"; 
             ghost.style.opacity = "1";
@@ -579,7 +519,6 @@
             ghost.style.zIndex = "3000";
             ghost.style.pointerEvents = "none";
             
-            // 计算起点位置（居中对齐）
             const startCenterX = startRect.left + startRect.width / 2;
             const startCenterY = startRect.top + startRect.height / 2;
             const cardWidth = endRect.width;
@@ -591,18 +530,13 @@
             ghost.style.top = `${initialTop}px`;
             ghost.style.width = `${cardWidth}px`;
             ghost.style.height = `${cardHeight}px`;
-            
-            // 初始 Transform
             ghost.style.transform = "translate(0, 0) scale(0.5)";
 
             document.body.appendChild(ghost);
 
             void ghost.offsetWidth;
-            // --- 执行动画 ---
             requestAnimationFrame(() => {
                 ghost.style.transition = "transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)";
-                
-                // 第二帧：设置最终位置
                 requestAnimationFrame(() => {
                     const deltaX = endRect.left - initialLeft;
                     const deltaY = endRect.top - initialTop;
@@ -610,19 +544,15 @@
                 });
             });
 
-            // 清理
             setTimeout(() => {
                 ghost.remove();
                 cardEl.style.opacity = "1";
                 cardEl.classList.add("landing");
                 setTimeout(() => cardEl.classList.remove("landing"), 500);
-            }, 650); // 稍微比 transition (0.6s) 长一点，确保动画完成
+            }, 650);
         });
-
         lastSubmittedCardRect = null;
     }
-
-    // --- 手牌和确认逻辑 ---
 
     function renderHand(hand, status, iHaveSelected) {
         const container = document.getElementById("hand");
@@ -635,22 +565,16 @@
             if (mySelectedCardValue === c.value) {
                 el.classList.add("selected");
             }
-            el.onclick = (e) => { // 传入 event
+            el.onclick = (e) => {
                 if (isLocked) return;
-                
-                // 切换选中状态
                 if (mySelectedCardValue === c.value) {
                     mySelectedCardValue = null;
                 } else {
                     mySelectedCardValue = c.value;
                 }
-
                 predictedRowIdx = predictRow(mySelectedCardValue, currentGameState ? currentGameState.publicState.rows : [], status);
                 renderPredictionMessage(predictedRowIdx);
-                
-                // 仅重新渲染棋盘的预测效果，不重新拉取数据
                 if (currentGameState) {
-                    // 注意：这里不需要重新计算 landing，所以传空 Map
                     renderBoard(currentGameState.publicState.rows, status, currentGameState.publicState.pendingPlayerId, predictedRowIdx, new Map());
                 }
                 updateConfirmButton(status, iHaveSelected);
@@ -662,20 +586,13 @@
 
     function confirmPlay() {
         if (mySelectedCardValue === null) return;
-        
-        // 关键：在点击确认的瞬间，保存当前选中卡片的绝对位置
         const selEl = document.querySelector("#hand .card.selected");
         if (selEl) {
             const rect = selEl.getBoundingClientRect();
-            // 复制 Rect 的值，而不是引用
             lastSubmittedCardRect = {
-                left: rect.left,
-                top: rect.top,
-                width: rect.width,
-                height: rect.height
+                left: rect.left, top: rect.top, width: rect.width, height: rect.height
             };
         }
-        
         ws.send(JSON.stringify({type: "play_card", value: mySelectedCardValue}));
         myConfirmPending = true;
         const handEl = document.getElementById("hand");
@@ -683,8 +600,6 @@
         updateConfirmButton("playing", true);
         log(`你已提交出牌 ${mySelectedCardValue}，等待其他玩家确认...`);
     }
-
-    // --- 辅助函数 (保持不变或微调) ---
 
     function createCard(c) {
         const div = document.createElement("div");
@@ -708,7 +623,6 @@
     function updateInstructions(status, publicState) {
         const instruction = document.getElementById("instruction");
         const readyBtn = document.getElementById("ready-btn");
-        
         if (status === "waiting") {
             readyBtn.style.display = "inline-block";
             const meReady = publicState.players[myId];
@@ -732,7 +646,6 @@
         }
     }
 
-    // 保持原来的工具函数
     function predictRow(value, rows, status) {
         if (status !== "playing" || value === null || !rows) return null;
         let bestIdx = -1;
@@ -761,48 +674,35 @@
         if (!prev) return res;
         current.forEach((row, idx) => {
             const prevVals = prev[idx] || [];
-        // 筛选出新增加的 Card 对象
             const added = (row.cards || []).filter(c => !prevVals.includes(c.value));
             if (added.length > 0) res.set(idx, added);
         });
         return res;
     }
-
     function flattenLanding(landingMap) {
         const arr = [];
         landingMap.forEach(cards => cards.forEach(c => arr.push(c)));
         return arr;
     }
-
     function snapshotPlayers(players) {
         if (!players) return null;
         const res = {};
         Object.values(players).forEach(p => { res[p.id] = { handSize: p.handSize ?? 0 }; });
         return res;
     }
-
     function diffPlayerPlays(prevSnap, currPlayers, landingCards) {
         const events = [];
-        // 直接遍历新落地的牌，因为现在牌里包含了 ownerId
         landingCards.forEach(card => {
             if (card.ownerId && currPlayers[card.ownerId]) {
                 const p = currPlayers[card.ownerId];
-                events.push({ 
-                    id: p.id, 
-                    name: p.name, 
-                    cardValue: card.value 
-                });
+                events.push({ id: p.id, name: p.name, cardValue: card.value });
             }
         });
         return events;
     }
-
     function findLandingRow(landingMap, val) {
         let hit = null;
-        // landingMap 的 value 现在是 Card 对象数组
-        landingMap.forEach((cards, idx) => { 
-            if (cards.some(c => c.value === val)) hit = idx; 
-        });
+        landingMap.forEach((cards, idx) => { if (cards.some(c => c.value === val)) hit = idx; });
         return hit;
     }
     function sendReady() { ws.send(JSON.stringify({type: "ready"})); }
