@@ -5,9 +5,13 @@ import { handleStateUpdate, renderRoomList, log } from './main.js';
 let lobbyWs;
 let gameWs;
 
-export function connectLobby(host) {
+export function connectLobby(protocol, host) {
     if (lobbyWs) return;
-    lobbyWs = new WebSocket("ws://" + host + "/lobby_ws");
+    let scheme = "wss://"
+    if(protocol==="http:"){
+        scheme = "ws://"
+    }
+    lobbyWs = new WebSocket(scheme + host + "/lobby_ws");
     lobbyWs.onmessage = (evt) => {
         const msg = JSON.parse(evt.data);
         if (msg.type === "room_list") {
@@ -16,9 +20,13 @@ export function connectLobby(host) {
     };
 }
 
-export function connectGame(host, roomId, actionType, myId, myName) {
+export function connectGame(protocol, host, roomId, actionType, myId, myName) {
     if (gameWs) gameWs.close();
-    gameWs = new WebSocket("ws://" + host + "/ws");
+    let scheme = "wss://"
+    if(protocol==="http:"){
+        scheme = "ws://"
+    }
+    gameWs = new WebSocket(scheme + host + "/ws");
     
     gameWs.onopen = () => {
         sendAction({

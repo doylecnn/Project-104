@@ -27,7 +27,7 @@ window.onload = function() {
             alert("请先输入昵称");
         }
     } else {
-        connectLobby(window.location.host);
+        connectLobby(window.location.protocol, window.location.host);
     }
 
     // Bind Global Events
@@ -65,7 +65,7 @@ async function createRoom() {
     if (!saveUserInfo()) return;
     const roomId = document.getElementById("new-room-id").value.trim();
     if (!roomId) return alert("请输入房间号");
-    connectGame(window.location.host, roomId, "create_room", State.getMyId(), State.getMyName());
+    connectGame(window.location.protocol, window.location.host, roomId, "create_room", State.getMyId(), State.getMyName());
 }
 
 async function joinRoom(roomId) {
@@ -76,10 +76,10 @@ async function joinRoom(roomId) {
         if (!data.exists) {
             alert("房间不存在！");
             window.history.pushState({}, document.title, "/");
-            connectLobby(window.location.host);
+            connectLobby(window.location.protocol, window.location.host);
             return;
         }
-        connectGame(window.location.host, roomId, "login", State.getMyId(), State.getMyName());
+        connectGame(window.location.protocol, window.location.host, roomId, "login", State.getMyId(), State.getMyName());
     } catch (e) {
         alert("网络错误");
     }
@@ -93,7 +93,7 @@ export function leaveRoom(passive = false) {
     State.setCurrentRoomId("");
     window.history.pushState({}, document.title, "/");
     switchScreen("lobby");
-    connectLobby(window.location.host);
+    connectLobby(window.location.protocol, window.location.host);
 }
 
 function deleteRoom() {
