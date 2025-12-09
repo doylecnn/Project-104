@@ -22,8 +22,7 @@ func NewStore(dbPath string) (*Store, error) {
 	}
 
 	sqlStmt := `CREATE TABLE IF NOT EXISTS game_history (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id TEXT, player_name TEXT, score INTEGER, played_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
-	sqlStmt += `CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, owner_id TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
-	sqlStmt += `CREATE TABLE IF NOT EXISTS room_snapshots (room_id TEXT PRIMARY KEY, state_json TEXT);`
+	sqlStmt += `CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, owner_id TEXT, status TEXT, state_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
 	sqlStmt += `CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY, id TEXT);`
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
@@ -83,7 +82,7 @@ func (s *Store) GetRoomStats(roomID string) []model.PlayerStat {
 
 func (s *Store) LoadRooms() (map[string]*model.Room, error) {
 	rooms := make(map[string]*model.Room)
-	rows, err := s.db.Query("SELECT id, owner_id, status FROM rooms")
+	rows, err := s.db.Query("SELECT id, owner_id, status, state_json FROM rooms")
 	if err != nil {
 		return nil, err
 	}
@@ -91,17 +90,16 @@ func (s *Store) LoadRooms() (map[string]*model.Room, error) {
 
 	for rows.Next() {
 		var id, ownerId, status string
-		rows.Scan(&id, &ownerId, &status)
-
-		var stateJSON string
-		err := s.db.QueryRow("SELECT state_json FROM room_snapshots WHERE room_id = ?", id).Scan(&stateJSON)
+		var stateJSON sql.NullString // Use NullString to handle potential NULLs
+		rows.Scan(&id, &ownerId, &status, &stateJSON)
 
 		newRoom := &model.Room{}
-		if err == nil && stateJSON != "" {
-			if err := json.Unmarshal([]byte(stateJSON), newRoom); err != nil {
+		if stateJSON.Valid && stateJSON.String != "" {
+			if err := json.Unmarshal([]byte(stateJSON.String), newRoom); err != nil {
 				log.Printf("Failed to unmarshal room %s: %v", id, err)
 				continue
 			}
+			// Ensure essential fields are set even if JSON override them wrongly (though JSON usually has truth)
 			newRoom.OwnerID = ownerId
 			newRoom.ID = id
 		} else {
@@ -124,11 +122,14 @@ func (s *Store) PersistRoom(r *model.Room) {
 		log.Println("Error marshaling room:", err)
 		return
 	}
-	s.db.Exec("INSERT OR REPLACE INTO rooms (id, owner_id, status) VALUES (?, ?, ?)", r.ID, r.OwnerID, r.Status)
-	s.db.Exec("INSERT OR REPLACE INTO room_snapshots (room_id, state_json) VALUES (?, ?)", r.ID, string(data))
+	// Use UPDATE if exists, or INSERT OR REPLACE logic.
+	// Since we always have ID, REPLACE INTO is fine.
+	_, err = s.db.Exec("INSERT OR REPLACE INTO rooms (id, owner_id, status, state_json) VALUES (?, ?, ?, ?)", r.ID, r.OwnerID, r.Status, string(data))
+	if err != nil {
+		log.Println("Error persisting room:", err)
+	}
 }
 
 func (s *Store) DeleteRoom(roomID string) {
 	s.db.Exec("DELETE FROM rooms WHERE id = ?", roomID)
-	s.db.Exec("DELETE FROM room_snapshots WHERE room_id = ?", roomID)
 }

@@ -47,7 +47,7 @@
             </div>
             <div>
                 <button class="btn-small btn-orange" onclick="showStats()">📊 战绩</button>
-                <button class="btn-small btn-red" id="leave-btn" onclick="leaveRoom()">🚪 退出房间</button>
+                <button class="btn-small btn-red" id="leave-btn" onclick="leaveRoom()">🚪 离开房间</button>
                 <button class="btn-small btn-red" id="delete-btn" onclick="deleteRoom()" style="display:none;">🗑️ 解散房间</button>
             </div>
         </div>
@@ -64,6 +64,7 @@
         <div id="game-controls" class="game-controls">
             <button id="ready-btn" class="btn-green" onclick="sendReady()">准备 / Ready</button>
             <button id="restart-btn" class="btn-red" style="display:none;" onclick="sendRestart()">重新开始</button>
+            <button id="force-restart-btn" class="btn-red" style="display:none;" onclick="sendForceRestart()">强制重开</button>
             <button id="btn-confirm-play" class="btn-orange" onclick="confirmPlay()">✅ 确认出牌</button>
         </div>
 

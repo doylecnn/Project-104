@@ -1,16 +1,16 @@
 package game
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sort"
 	"sync"
 	"take5/internal/database"
 	"take5/internal/model"
+	"time"
 
 	"github.com/gorilla/websocket"
-
-	"encoding/json"
 )
 
 type Manager struct {
@@ -109,6 +109,7 @@ func (m *Manager) BroadcastState(r *model.Room) {
 			"id": p.ID, "name": p.Name, "score": p.Score, "ready": p.Ready,
 			"hasSelected": p.SelectedCard != nil, "handSize": len(p.Hand),
 			"isOwner": (id == r.OwnerID),
+			"isOnline": p.IsOnline,
 		}
 	}
 	stateMap := map[string]interface{}{
@@ -164,13 +165,18 @@ func (m *Manager) StartGame(r *model.Room) {
 	idx := 0
 	playingCount := 0
 	for _, p := range r.Players {
-		if p.Ready {
+		if p.IsOnline {
 			p.Hand = r.Deck[idx : idx+10]
 			sort.Slice(p.Hand, func(i, j int) bool { return p.Hand[i].Value < p.Hand[j].Value })
 			p.Score = 0
 			p.SelectedCard = nil
+			p.Ready = false // Reset ready state for new game
 			idx += 10
 			playingCount++
+		} else {
+			p.Hand = []model.Card{} // Clear hand for offline players
+			p.SelectedCard = nil
+			p.Ready = false
 		}
 	}
 	if playingCount < 2 {
@@ -214,6 +220,26 @@ func (m *Manager) ProcessTurnQueue(r *model.Room) {
 			BroadcastInfo(r, "游戏结束！正在结算积分...")
 			m.Store.RecordGameResult(r.ID, r.Players)
 			m.BroadcastStats(r)
+
+			onlinePlayersCount := 0
+			for _, p := range r.Players {
+				if p.IsOnline {
+					onlinePlayersCount++
+				}
+			}
+
+			if onlinePlayersCount >= 2 {
+				BroadcastInfo(r, "5秒后自动开始新一局游戏...")
+				go func() {
+					time.Sleep(5 * time.Second)
+					// Acquire room mutex before starting game as StartGame modifies room state
+					r.Mutex.Lock()
+					m.StartGame(r)
+					r.Mutex.Unlock()
+				}()
+			} else {
+				BroadcastInfo(r, "在线人数不足，无法自动开始新一局。")
+			}
 		} else {
 			r.Status = "playing"
 		}
@@ -292,4 +318,40 @@ func (m *Manager) HandleRowChoice(r *model.Room, playerID string, rowIdx int) {
 	r.TurnQueue = r.TurnQueue[1:]
 	r.PendingPlay = nil
 	m.ProcessTurnQueue(r)
+}
+
+func (m *Manager) ForceRestart(r *model.Room, requesterID string) bool {
+	if r.OwnerID != requesterID {
+		return false // Only owner can force restart
+	}
+
+	onlinePlayersCount := 0
+	for _, p := range r.Players {
+		if p.IsOnline {
+			onlinePlayersCount++
+		}
+	}
+
+	if onlinePlayersCount < 2 {
+		BroadcastInfo(r, "人数不足，无法强制重开")
+		return false
+	}
+
+	// Reset game state for a new round
+	for _, p := range r.Players {
+		p.Hand = []model.Card{}
+		p.Score = 0
+		p.Ready = false
+		p.SelectedCard = nil
+	}
+	for i := 0; i < 4; i++ {
+		r.Rows[i].Cards = make([]model.Card, 0)
+	}
+	r.TurnQueue = make([]model.PlayAction, 0)
+	r.PendingPlay = nil
+	r.Status = "waiting" // Set to waiting, then StartGame will move to playing
+
+	BroadcastInfo(r, fmt.Sprintf("%s 强制重开了一局新游戏！", r.Players[requesterID].Name))
+	m.StartGame(r)
+	return true
 }

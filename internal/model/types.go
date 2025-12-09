@@ -20,6 +20,7 @@ type Player struct {
 	Score        int             `json:"score"`
 	Ready        bool            `json:"ready"`
 	SelectedCard *Card           `json:"selectedCard"`
+	IsOnline     bool            `json:"isOnline"`
 }
 
 type Row struct {

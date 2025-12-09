@@ -71,10 +71,14 @@ func (h *Handler) HandleGameWS(w http.ResponseWriter, r *http.Request) {
 			currentRoom.Mutex.Lock()
 			if p, ok := currentRoom.Players[currentPlayerID]; ok {
 				p.Conn = nil
+				p.IsOnline = false // Mark player as offline
 				log.Printf("Player %s disconnected from room %s", p.Name, currentRoom.ID)
 			}
 			currentRoom.Mutex.Unlock()
-			go h.Manager.BroadcastRoomList()
+			// State broadcast will trigger room list update if needed
+			if currentRoom != nil && currentRoom.Players[currentPlayerID] != nil {
+				h.Manager.BroadcastState(currentRoom)
+			}
 		}
 		ws.Close()
 	}()
@@ -136,20 +140,19 @@ func (h *Handler) HandleGameWS(w http.ResponseWriter, r *http.Request) {
 			if existingPlayer, ok := room.Players[uid]; ok {
 				existingPlayer.Conn = ws
 				existingPlayer.Name = name
+				existingPlayer.IsOnline = true // Mark player as online
 				room.Mutex.Unlock()
 				h.Manager.BroadcastState(room)
 				h.Manager.BroadcastStats(room)
 			} else {
-				newPlayer := &model.Player{ID: uid, Name: name, Conn: ws, Score: 0, Ready: false}
+				newPlayer := &model.Player{ID: uid, Name: name, Conn: ws, Score: 0, Ready: false, IsOnline: true}
 				room.Players[uid] = newPlayer
-				if len(room.Players) == 1 && room.OwnerID == "" {
-					room.OwnerID = uid
-				}
+				// OwnerID is set only on room creation, not on first player join.
 				room.Mutex.Unlock()
 				h.Manager.BroadcastState(room)
 				h.Manager.BroadcastStats(room)
 			}
-			go h.Manager.BroadcastRoomList()
+			go h.Manager.BroadcastRoomList() // Update lobby after login/reconnect
 
 		} else if action.Type == "delete_room" {
 			if currentRoom != nil {
@@ -181,55 +184,36 @@ func (h *Handler) HandleGameWS(w http.ResponseWriter, r *http.Request) {
 		} else if action.Type == "leave_room" {
 			if currentRoom != nil {
 				currentRoom.Mutex.Lock()
-				if currentRoom.Status == "waiting" || currentRoom.Status == "finished" {
-					delete(currentRoom.Players, currentPlayerID)
-
-					if currentRoom.OwnerID == currentPlayerID {
-						if len(currentRoom.Players) > 0 {
-							for pid, p := range currentRoom.Players {
-								currentRoom.OwnerID = pid
-								game.BroadcastInfo(currentRoom, fmt.Sprintf("房主离开了，房主移交给 %s", p.Name))
-								break
-							}
-						} else {
-							currentRoom.Status = "waiting"
-						}
-					}
-				} else {
-					if p, ok := currentRoom.Players[currentPlayerID]; ok {
-						game.BroadcastInfo(currentRoom, fmt.Sprintf("%s 暂时离开了游戏 (手牌已保留)", p.Name))
-					}
+				if p, ok := currentRoom.Players[currentPlayerID]; ok {
+					p.Conn = nil
+					p.IsOnline = false // Mark player as offline, do not delete
+					game.BroadcastInfo(currentRoom, fmt.Sprintf("%s 离开了房间 (手牌已保留)", p.Name))
 				}
-
-				if len(currentRoom.Players) > 0 {
-					h.Manager.BroadcastState(currentRoom)
-				} else {
-					go h.Manager.BroadcastRoomList()
-				}
-
+				h.Manager.BroadcastState(currentRoom) // Broadcast state to update online status
 				currentRoom.Mutex.Unlock()
-				currentRoom = nil
+
+				currentRoom = nil // Avoid defer logic for this explicit leave
 				return
 			}
 		} else {
+			// Game logic
 			if currentRoom != nil && currentPlayerID != "" {
 				currentRoom.Mutex.Lock()
 				player := currentRoom.Players[currentPlayerID]
-				if player != nil {
+				if player != nil && player.IsOnline { // Only process actions from online players
 					switch action.Type {
 					case "ready":
 						if currentRoom.Status == "waiting" {
 							player.Ready = true
+							// Ready logic for initial game start remains
 							readyCount := 0
-							allReady := true
 							for _, p := range currentRoom.Players {
-								if p.Ready {
+								if p.IsOnline && p.Ready {
 									readyCount++
-								} else {
-									allReady = false
 								}
 							}
-							if allReady && readyCount >= 2 {
+							// Only start if at least two online players are ready
+							if readyCount >= 2 {
 								h.Manager.StartGame(currentRoom)
 							} else {
 								h.Manager.BroadcastState(currentRoom)
@@ -249,8 +233,9 @@ func (h *Handler) HandleGameWS(w http.ResponseWriter, r *http.Request) {
 							if valid {
 								player.SelectedCard = &selectC
 								allSelected := true
+								// Only consider online players for allSelected check
 								for _, p := range currentRoom.Players {
-									if len(p.Hand) > 0 && p.SelectedCard == nil {
+									if p.IsOnline && len(p.Hand) > 0 && p.SelectedCard == nil {
 										allSelected = false
 										break
 									}
@@ -265,6 +250,14 @@ func (h *Handler) HandleGameWS(w http.ResponseWriter, r *http.Request) {
 					case "choose_row":
 						if currentRoom.Status == "choosing_row" {
 							h.Manager.HandleRowChoice(currentRoom, currentPlayerID, action.Value)
+						}
+					case "force_restart": // New action for owner to force restart
+						if currentRoom.OwnerID == currentPlayerID {
+							if !h.Manager.ForceRestart(currentRoom, currentPlayerID) {
+								ws.WriteJSON(model.Message{Type: "info", Payload: "无法强制重开，可能人数不足或你不是房主"})
+							}
+						} else {
+							ws.WriteJSON(model.Message{Type: "info", Payload: "只有房主可以强制重开"})
 						}
 					case "restart":
 						if currentRoom.Status == "finished" && currentRoom.OwnerID == currentPlayerID {

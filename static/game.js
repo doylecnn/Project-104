@@ -178,6 +178,10 @@ function copyInviteLink() {
     });
 }
 
+function hasOfflinePlayers(players) {
+    return Object.values(players).some(p => !p.isOnline);
+}
+
 function handleStateUpdate(payload) {
     currentGameState = payload;
     const publicState = payload.publicState;
@@ -213,6 +217,8 @@ function handleStateUpdate(payload) {
     isOwner = (publicState.ownerId === myId);
     document.getElementById("delete-btn").style.display = isOwner ? "inline-block" : "none";
     document.getElementById("restart-btn").style.display = (isOwner && status === "finished") ? "inline-block" : "none";
+    // Only show force restart if owner, game is playing, AND there are offline players
+    document.getElementById("force-restart-btn").style.display = (isOwner && status === "playing" && hasOfflinePlayers(publicState.players)) ? "inline-block" : "none";
 
     renderPlayers(publicState.players, publicState.pendingPlayerId, publicState.ownerId);
     renderHand(myHand, status, iHaveSelected);
@@ -262,7 +268,7 @@ function renderPlayers(players, pendingPid, ownerId) {
     container.innerHTML = "";
     Object.values(players).forEach(p => {
         const div = document.createElement("div");
-        div.className = `player-tag ${p.id === myId ? 'me' : ''} ${p.ready ? 'ready' : ''} ${p.id === ownerId ? 'owner' : ''}`;
+        div.className = `player-tag ${p.id === myId ? 'me' : ''} ${p.ready ? 'ready' : ''} ${p.id === ownerId ? 'owner' : ''} ${p.isOnline ? 'online' : 'offline'}`;
         div.dataset.uid = p.id; 
         div.innerText = `${p.name} (${p.score})`;
         container.appendChild(div);
@@ -520,6 +526,11 @@ function findLandingRow(landingMap, val) {
 }
 function sendReady() { ws.send(JSON.stringify({type: "ready"})); }
 function sendRestart() { ws.send(JSON.stringify({type: "restart"})); }
+function sendForceRestart() {
+    if (confirm("确定要强制重开一局新游戏吗？本局将被作废。")) {
+        ws.send(JSON.stringify({type: "force_restart"}));
+    }
+}
 function showStats() { document.getElementById("stats-modal").style.display = "flex"; renderStats(); }
 function closeStats() { document.getElementById("stats-modal").style.display = "none"; }
 function renderStats() {
