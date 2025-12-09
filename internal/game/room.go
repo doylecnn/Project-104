@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"take5/internal/model"
 	"time"
 )
@@ -13,7 +14,7 @@ func (m *Manager) StartGame(r *model.Room) {
 	r.Status = "playing"
 	r.TurnQueue = make([]model.PlayAction, 0)
 	r.PendingPlay = nil
-	
+
 	// Count online players to verify we can start
 	playingCount := 0
 	for _, p := range r.Players {
@@ -30,7 +31,7 @@ func (m *Manager) StartGame(r *model.Room) {
 
 	// Deal cards using rules.go helper
 	DealCards(r)
-	
+
 	m.BroadcastState(r)
 }
 
@@ -50,6 +51,7 @@ func (m *Manager) PrepareTurnResolution(r *model.Room) {
 }
 
 // ProcessTurnQueue resolves the actions in the turn queue.
+// r 此时比在外部被锁
 func (m *Manager) ProcessTurnQueue(r *model.Room) {
 	if len(r.TurnQueue) == 0 {
 		r.PendingPlay = nil
@@ -62,9 +64,22 @@ func (m *Manager) ProcessTurnQueue(r *model.Room) {
 		}
 		if allEmpty {
 			r.Status = "finished"
-			BroadcastInfo(r, "游戏结束！正在结算积分...")
+
+			// 广播结算状态，让客户端展示动画
+			m.BroadcastState(r)
+
+			// 延迟2秒，让玩家看到完整的上牌动画和准备进入结算
+			time.Sleep(2 * time.Second)
+
+			BroadcastInfo(r, "游戏结束！")
 			m.Store.RecordGameResult(r.ID, r.Players)
 			m.BroadcastStats(r)
+
+			// 再次广播最终状态，确保客户端显示最新积分
+			m.BroadcastState(r)
+
+			// 再延迟2秒展示结算画面
+			time.Sleep(2 * time.Second)
 
 			onlinePlayersCount := 0
 			for _, p := range r.Players {
@@ -73,10 +88,15 @@ func (m *Manager) ProcessTurnQueue(r *model.Room) {
 				}
 			}
 
+			scoreLines := []string{}
+			for _, p := range r.Players {
+				scoreLines = append(scoreLines, fmt.Sprintf("%s : %d 分", p.Name, p.Score))
+			}
+			BroadcastInfo(r, "本局得分："+strings.Join(scoreLines, " | "))
+
 			if onlinePlayersCount >= 2 {
-				// Initiate countdown and send updates
+				// 开始倒计时，但保持状态为finished
 				for i := 5; i > 0; i-- {
-					BroadcastInfo(r, fmt.Sprintf("新一局游戏将在 %d 秒后开始...", i))
 					for _, p := range r.Players {
 						if p.Conn != nil && p.IsOnline {
 							p.Conn.WriteJSON(model.Message{Type: "auto_restart_countdown", Payload: model.AutoRestartCountdownPayload{Count: i}})
@@ -84,16 +104,16 @@ func (m *Manager) ProcessTurnQueue(r *model.Room) {
 					}
 					time.Sleep(1 * time.Second)
 				}
-				r.Mutex.Lock()
+
+				// 倒计时结束，开始新游戏
 				m.StartGame(r)
-				r.Mutex.Unlock()
 			} else {
 				BroadcastInfo(r, "在线人数不足，无法自动开始新一局。")
 			}
 		} else {
 			r.Status = "playing"
+			m.BroadcastState(r)
 		}
-		m.BroadcastState(r)
 		return
 	}
 
@@ -146,7 +166,7 @@ func (m *Manager) HandleRowChoice(r *model.Room, playerID string, rowIdx int) {
 	}
 	player := r.Players[playerID]
 	rowScore := CalculateRowScore(r.Rows[rowIdx])
-	
+
 	player.Score += rowScore
 	r.Rows[rowIdx].Cards = []model.Card{r.PendingPlay.Card}
 	BroadcastInfo(r, fmt.Sprintf("%s 收走第 %d 行，扣 %d 分", player.Name, rowIdx+1, rowScore))

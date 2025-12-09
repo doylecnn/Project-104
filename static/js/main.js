@@ -45,6 +45,10 @@ window.onload = function() {
 
     // Listen for custom events from UI module
     window.addEventListener('join-room', (e) => joinRoom(e.detail));
+    document.getElementById("close-game-over-btn").addEventListener("click", UI.closeGameOver);
+    document.getElementById("game-over-modal").addEventListener("click", function (e) {
+        if (e.target === this) UI.closeGameOver();   // 点背景也关闭
+    });
 };
 
 // --- Actions ---
@@ -148,10 +152,30 @@ function closeStats() {
 
 export function handleStateUpdate(msg) {
     if (msg.type === "auto_restart_countdown") {
-        UI.updateInstructions("countdown", null, State.getMyId(), msg.payload.Count); // Pass countdown
+        // 如果结算画面没显示，先显示
+        if (!State.getGameOverShown() && State.getCurrentGameState()?.publicState?.status === "finished") {
+            UI.renderGameOver(State.getCurrentGameState().publicState.players, State.getMyId());
+            State.setGameOverShown(true);
+        }
+        UI.updateCountdownDisplay(msg.payload.count);
         return;
     } else if (msg.type === "state") {
         const payload = msg.payload;
+        // 处理自动重启的状态重置
+        if (State.getGameOverShown() && payload.publicState.status === "playing") {
+            UI.closeGameOver();
+            State.setGameOverShown(false);
+        }
+        
+        // 检测到游戏结束，显示结算
+        if (payload.publicState.status === "finished" && !State.getGameOverShown()) {
+            // 延迟显示结算，让动画完成
+            setTimeout(() => {
+                UI.renderGameOver(payload.publicState.players, State.getMyId());
+                State.setGameOverShown(true);
+            }, 1500);
+        }
+
         // Switch screen if needed
         if (document.getElementById("lobby-screen").style.display !== "none") {
             switchScreen("game");
@@ -313,7 +337,7 @@ export function handleStateUpdate(msg) {
         }
     }
     
-    UI.updateInstructions(status, publicState, State.getMyId());
+    UI.updateInstructions(status, publicState, State.getMyId(), msg.type === "auto_restart_countdown" ? msg.payload.Count : null);
 }
 }
 

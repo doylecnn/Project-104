@@ -10,6 +10,7 @@ let roomStats = [];
 let lastSubmittedCardRect = null;
 let prevRowsSnapshot = null;
 let prevPlayersSnapshot = null;
+let gameOverShown = false;
 
 export function getMyId() { return myId; }
 export function getMyName() { return myName; }
@@ -41,3 +42,6 @@ export function setPrevPlayersSnapshot(snap) { prevPlayersSnapshot = snap; }
 export function isOwner() {
     return currentGameState && currentGameState.publicState.ownerId === myId;
 }
+
+export function setGameOverShown(shown) { gameOverShown = shown; }
+export function getGameOverShown() { return gameOverShown; }

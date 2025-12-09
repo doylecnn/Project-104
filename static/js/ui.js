@@ -236,3 +236,46 @@ export function log(msg) {
     const d = document.getElementById("log");
     d.innerHTML = `<div>${msg}</div>` + d.innerHTML;
 }
+
+export function renderGameOver(players, myId) {
+    const modal = document.getElementById("game-over-modal");
+    const container = document.getElementById("game-over-stats");
+    
+    // 按得分排序（低分在前）
+    const sortedPlayers = Object.values(players).sort((a, b) => a.score - b.score);
+    
+    container.innerHTML = "";
+    sortedPlayers.forEach((p, i) => {
+        const div = document.createElement("div");
+        div.className = `game-over-player ${p.id === myId ? 'me' : ''} ${i === 0 ? 'winner' : ''}`;
+        
+        // 排名图标
+        const rankIcon = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'][i] || '📝';
+        
+        div.innerHTML = `
+            <div>
+                <span style="font-size: 20px; margin-right: 10px;">${rankIcon}</span>
+                <span style="font-weight: bold;">${p.name}</span>
+                ${p.id === myId ? '<span style="color: #2980b9; margin-left: 5px;">(我)</span>' : ''}
+                ${i === 0 ? '<span style="color: #f1c40f; margin-left: 5px;">🏆 胜利</span>' : ''}
+            </div>
+            <div style="font-size: 20px; font-weight: bold; color: #e74c3c;">
+                ${p.score} 🐮
+            </div>
+        `;
+        container.appendChild(div);
+    });
+    
+    modal.style.display = "flex";
+}
+
+export function closeGameOver() {
+    document.getElementById("game-over-modal").style.display = "none";
+}
+
+export function updateCountdownDisplay(count) {
+    const el = document.getElementById("countdown-display");
+    if (el) {
+        el.innerHTML = `⏱️ 新一局游戏将在 <strong>${count}</strong> 秒后开始...`;
+    }
+}
