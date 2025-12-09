@@ -1,0 +1,131 @@
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #2c3e50; color: white; margin: 0; padding: 20px; }
+.container { max-width: 900px; margin: 0 auto; }
+
+/* 视图控制 */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* 登录/大厅样式 */
+.auth-box {
+    background: white; padding: 30px; border-radius: 10px; color: #333; 
+    max-width: 400px; margin: 50px auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+.auth-box h2 { margin-top: 0; color: #e67e22; text-align: center; }
+.input-group { margin-bottom: 15px; }
+.input-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;}
+input[type="text"] {
+    width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px;
+}
+
+.room-list { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; max-height: 300px; overflow-y: auto;}
+.room-item {
+    background: #f9f9f9; border: 1px solid #ddd; padding: 10px; margin-bottom: 8px; border-radius: 5px;
+    display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s;
+}
+.room-item:hover { background: #eef2f3; }
+.room-info { font-size: 14px; }
+.room-status { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #95a5a6; color: white;}
+.room-status.waiting { background: #2ecc71; }
+.room-status.playing { background: #e74c3c; }
+
+/* 按钮 */
+button { padding: 10px 15px; font-size: 14px; cursor: pointer; border: none; color: white; border-radius: 5px; transition: opacity 0.2s; }
+button:hover { opacity: 0.9; }
+.btn-green { background: #27ae60; width: 100%; font-weight: bold; font-size: 16px; margin-bottom: 10px;}
+.btn-blue { background: #2980b9; }
+.btn-red { background: #c0392b; }
+.btn-orange { background: #e67e22; }
+.btn-small { padding: 5px 10px; font-size: 12px; }
+/* 确认出牌按钮样式 */
+#btn-confirm-play {
+    background: linear-gradient(45deg, #ff9800, #ffb74d);
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    animation: popIn 0.25s ease-out;
+}
+
+#btn-confirm-play[disabled] {
+    background: #7f8c8d; /* A muted grey */
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+@keyframes popIn {
+    from { transform: scale(0.85); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+/* 游戏内样式 */
+.game-header { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 20px; }
+.game-board { background-color: #34495e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+
+.game-messages {
+    height: 60px; /* Fixed height for instructions/predictions */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.game-controls {
+    height: 60px; /* Fixed height for the controls area */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px; /* Space between buttons */
+    margin-bottom: 15px;
+}
+.game-controls button { /* Adjust button width within the controls */
+    width: 180px;
+    margin: 0;
+}
+
+.row { display: flex; margin-bottom: 10px; align-items: center; height: 75px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; border: 2px solid transparent; }
+.row.selectable { border-color: #e74c3c; cursor: pointer; background: rgba(231, 76, 60, 0.2); }
+
+.card {
+    width: 45px; height: 65px; background-color: #ecf0f1; color: #2c3e50;
+    border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    font-weight: bold; margin-right: 8px; font-size: 16px; border: 2px solid #bdc3c7; padding: 2px; user-select: none;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+}
+.card .bullheads { font-size: 10px; line-height: 10px; text-align: center; color: #c0392b; letter-spacing: -1px;}
+.card.score-1 { border-color: #bdc3c7; }
+.card.score-2 { border-color: #3498db; background-color: #d6eaf8; }
+.card.score-3 { border-color: #f1c40f; background-color: #fcf3cf; }
+.card.score-5 { border-color: #e67e22; background-color: #fad7a0; }
+.card.score-7 { border-color: #e74c3c; background-color: #f5b7b1; color: #c0392b; }
+
+.hand { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; justify-content: center; min-height: 80px;}
+.hand .card { width: 55px; height: 80px; font-size: 20px; cursor: pointer;}
+.hand .card:hover { transform: translateY(-10px); background-color: #fff; z-index: 10;}
+.hand .card.selected { background-color: #2ecc71; color: white; border-color: #27ae60; transform: translateY(-30px); box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
+.card.selected:hover { transform: translateY(-30px); }
+.hand .card.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.hand.locked .card { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+.hand.locked .card:hover { transform: none; }
+.hand.locked .card.selected { opacity: 1; border-color: #999; }
+.row.predicted { border-color: #f1c40f; box-shadow: 0 0 10px rgba(241,196,15,0.7); }
+.card.landing { animation: landIn 0.35s ease-out; }
+.card.fly-from-hand { transition: transform 0.4s linear; will-change: transform; }
+@keyframes landIn {
+    from { transform: scale(0.6) translateY(-20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.player-list { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+.player-tag { background: #16a085; padding: 5px 10px; border-radius: 5px; font-size: 13px; min-width: 60px; text-align: center;}
+.player-tag.me { border: 2px solid #f1c40f; }
+.player-tag.ready { background: #27ae60; }
+.player-tag.owner::after { content: " 👑"; }
+
+/* 模态框 */
+#stats-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 2000; }
+.stats-box { background: white; padding: 20px; border-radius: 10px; color: #333; width: 400px; max-width: 90%; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }

@@ -754,7 +754,8 @@ func main() {
 	http.HandleFunc("/check_room", checkRoomHandler)
 	http.HandleFunc("/lobby_ws", handleLobbyWS)
 	http.HandleFunc("/ws", handleGameWS)
-	http.Handle("/", http.FileServer(http.Dir("./")))
+	// Serve static files (HTML, CSS, JS) from the "static" directory
+	http.Handle("/", http.FileServer(http.Dir("./static")))
 
 	fmt.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

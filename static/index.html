@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take 5 / 谁是牛头王</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 大厅界面 -->
+<div id="lobby-screen" class="screen active">
+    <div class="auth-box">
+        <h2>🐮 谁是牛头王 - 大厅</h2>
+        
+        <div class="input-group">
+            <label>你的昵称</label>
+            <input type="text" id="username-input" placeholder="请输入昵称" maxlength="10">
+        </div>
+
+        <div id="create-room-section">
+            <div class="input-group">
+                <label>创建新房间</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="new-room-id" placeholder="例如: 888">
+                    <button class="btn-green" style="width: auto; margin:0;" onclick="createRoom()">创建</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="room-list">
+            <div style="font-weight: bold; margin-bottom: 10px;">房间列表</div>
+            <div id="room-container">
+                <div style="text-align: center; color: #999;">正在加载房间...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 游戏界面 -->
+<div id="game-screen" class="screen">
+    <div class="container">
+        <div class="game-header">
+            <div>
+                <h3 style="margin:0; display: inline-block;">房间: <span id="current-room-id">-</span></h3>
+                <button class="btn-small btn-blue" onclick="copyInviteLink()" style="margin-left: 10px;">🔗 复制邀请链接</button>
+            </div>
+            <div>
+                <button class="btn-small btn-orange" onclick="showStats()">📊 战绩</button>
+                <button class="btn-small btn-red" id="leave-btn" onclick="leaveRoom()">🚪 退出房间</button>
+                <button class="btn-small btn-red" id="delete-btn" onclick="deleteRoom()" style="display:none;">🗑️ 解散房间</button>
+            </div>
+        </div>
+
+        <div class="player-list" id="player-list"></div>
+
+        <div class="game-board" id="board"></div>
+
+        <div id="game-messages" class="game-messages">
+            <div id="instruction" style="display: none;"></div>
+            <div id="prediction-msg"></div>
+        </div>
+
+        <div id="game-controls" class="game-controls">
+            <button id="ready-btn" class="btn-green" onclick="sendReady()">准备 / Ready</button>
+            <button id="restart-btn" class="btn-red" style="display:none;" onclick="sendRestart()">重新开始</button>
+            <button id="btn-confirm-play" class="btn-orange" onclick="confirmPlay()">✅ 确认出牌</button>
+        </div>
+
+        <h3>你的手牌</h3>
+        <div class="hand" id="hand"></div>
+
+        <div id="log" style="height: 100px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; font-size: 12px; margin-top: 20px; font-family: monospace;"></div>
+    </div>
+</div>
+
+<!-- 战绩模态框 -->
+<div id="stats-modal" onclick="closeStats()">
+    <div class="stats-box" onclick="event.stopPropagation()">
+        <h3 style="text-align: center;">🏆 战绩榜</h3>
+        <table id="stats-table">
+            <thead><tr><th>排名</th><th>玩家</th><th>局数</th><th>总分</th></tr></thead>
+            <tbody id="stats-body"></tbody>
+        </table>
+        <div style="text-align: center; margin-top: 15px;"><button class="btn-blue" onclick="closeStats()">关闭</button></div>
+    </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
