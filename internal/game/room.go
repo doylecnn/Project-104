@@ -74,13 +74,19 @@ func (m *Manager) ProcessTurnQueue(r *model.Room) {
 			}
 
 			if onlinePlayersCount >= 2 {
-				BroadcastInfo(r, "5秒后自动开始新一局游戏...")
-				go func() {
-					time.Sleep(5 * time.Second)
-					r.Mutex.Lock()
-					m.StartGame(r)
-					r.Mutex.Unlock()
-				}()
+				// Initiate countdown and send updates
+				for i := 5; i > 0; i-- {
+					BroadcastInfo(r, fmt.Sprintf("新一局游戏将在 %d 秒后开始...", i))
+					for _, p := range r.Players {
+						if p.Conn != nil && p.IsOnline {
+							p.Conn.WriteJSON(model.Message{Type: "auto_restart_countdown", Payload: model.AutoRestartCountdownPayload{Count: i}})
+						}
+					}
+					time.Sleep(1 * time.Second)
+				}
+				r.Mutex.Lock()
+				m.StartGame(r)
+				r.Mutex.Unlock()
 			} else {
 				BroadcastInfo(r, "在线人数不足，无法自动开始新一局。")
 			}

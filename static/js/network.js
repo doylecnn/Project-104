@@ -41,8 +41,8 @@ export function connectGame(host, roomId, actionType, myId, myName) {
             alert(msg.payload);
             gameWs.close();
             gameWs = null;
-        } else if (msg.type === "state") {
-            handleStateUpdate(msg.payload);
+        } else if (msg.type === "state" || msg.type === "auto_restart_countdown") {
+            handleStateUpdate(msg);
         } else if (msg.type === "info") {
             log(msg.payload);
         } else if (msg.type === "stats") {

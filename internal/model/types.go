@@ -64,6 +64,10 @@ type Action struct {
 	RoomID  string `json:"roomId"`
 }
 
+type AutoRestartCountdownPayload struct {
+	Count int `json:"count"`
+}
+
 type PlayerStat struct {
 	Name       string `json:"name"`
 	TotalGames int    `json:"totalGames"`

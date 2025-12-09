@@ -146,67 +146,138 @@ function closeStats() {
 
 // --- Logic & Rendering Wiring ---
 
-export function handleStateUpdate(payload) {
-    // Switch screen if needed
-    if (document.getElementById("lobby-screen").style.display !== "none") {
-        switchScreen("game");
-        const url = new URL(window.location);
-        url.searchParams.set('room', payload.roomId);
-        window.history.pushState({}, '', url);
-        closeLobby();
-    }
+export function handleStateUpdate(msg) {
+    if (msg.type === "auto_restart_countdown") {
+        UI.updateInstructions("countdown", null, State.getMyId(), msg.payload.Count); // Pass countdown
+        return;
+    } else if (msg.type === "state") {
+        const payload = msg.payload;
+        // Switch screen if needed
+        if (document.getElementById("lobby-screen").style.display !== "none") {
+            switchScreen("game");
+            const url = new URL(window.location);
+            url.searchParams.set('room', payload.roomId);
+            window.history.pushState({}, '', url);
+            closeLobby();
+        }
 
-    State.setCurrentGameState(payload);
-    State.setCurrentRoomId(payload.roomId);
-    
-    const publicState = payload.publicState;
-    const myHand = payload.myHand || [];
-    const status = publicState.status;
-    const me = publicState.players[State.getMyId()] || {};
+        State.setCurrentGameState(payload);
+        State.setCurrentRoomId(payload.roomId);
+        
+        const publicState = payload.publicState;
+        const myHand = payload.myHand || [];
+        const status = publicState.status;
+        const me = publicState.players[State.getMyId()] || {};
 
-    // Sync selected card state
-    if (payload.mySelectedCard !== undefined && payload.mySelectedCard !== null) {
-        State.setMySelectedCardValue(payload.mySelectedCard);
-        State.setMyConfirmPending(true);
-    }
+        // Sync selected card state
+        if (payload.mySelectedCard !== undefined && payload.mySelectedCard !== null) {
+            State.setMySelectedCardValue(payload.mySelectedCard);
+            State.setMyConfirmPending(true);
+        }
 
-    const iHaveSelected = !!me.hasSelected;
+        const iHaveSelected = !!me.hasSelected;
 
-    // Reset pending state if round changed or not playing
-    if (!iHaveSelected && status === "playing") {
-         State.setMyConfirmPending(false);
-    }
-    if (status !== "playing" && status !== "choosing_row") {
-        State.setMyConfirmPending(false);
-        State.setMySelectedCardValue(null);
-    }
+        // Reset pending state if round changed or not playing
+        if (!iHaveSelected && status === "playing") {
+             State.setMyConfirmPending(false);
+        }
+        if (status !== "playing" && status !== "choosing_row") {
+            State.setMyConfirmPending(false);
+            State.setMySelectedCardValue(null);
+        }
 
-    // Validate selected card is still in hand
-    const handValues = myHand.map(c => c.value);
-    if (State.getMySelectedCardValue() !== null && !handValues.includes(State.getMySelectedCardValue()) && !State.getMyConfirmPending()) {
-        State.setMySelectedCardValue(null);
-    }
+        // Validate selected card is still in hand
+        const handValues = myHand.map(c => c.value);
+        if (State.getMySelectedCardValue() !== null && !handValues.includes(State.getMySelectedCardValue()) && !State.getMyConfirmPending()) {
+            State.setMySelectedCardValue(null);
+        }
 
-    // Update UI elements
-    document.getElementById("current-room-id").innerText = payload.roomId;
-    
-    const isOwnerVal = (publicState.ownerId === State.getMyId());
-    document.getElementById("delete-btn").style.display = isOwnerVal ? "inline-block" : "none";
-    document.getElementById("restart-btn").style.display = (isOwnerVal && status === "finished") ? "inline-block" : "none";
-    
-    // Check for offline players for force restart button visibility
-    const hasOffline = Object.values(publicState.players).some(p => !p.isOnline);
-    document.getElementById("force-restart-btn").style.display = (isOwnerVal && status === "playing" && hasOffline) ? "inline-block" : "none";
-
-    UI.renderPlayers(publicState.players, publicState.pendingPlayerId, publicState.ownerId);
-    renderHand(myHand, status, iHaveSelected); // Defined locally below to close over click handlers
-    UI.updateConfirmButton(status, iHaveSelected, State.getMyConfirmPending());
-
-    const predictedRowIdx = predictRow(State.getMySelectedCardValue(), publicState.rows, status);
-    UI.renderPredictionMessage(predictedRowIdx);
-
-    // Calc Diff for Animation and Logging
-    const landingMap = computeLanding(State.getPrevRowsSnapshot(), publicState.rows);
+        // Update UI elements
+        document.getElementById("current-room-id").innerText = payload.roomId;
+        
+        const isOwnerVal = (publicState.ownerId === State.getMyId());
+        document.getElementById("delete-btn").style.display = isOwnerVal ? "inline-block" : "none";
+        document.getElementById("restart-btn").style.display = (isOwnerVal && status === "finished") ? "inline-block" : "none";
+        
+            // Check for offline players for force restart button visibility
+            const hasOffline = Object.values(publicState.players).some(p => !p.isOnline);
+            document.getElementById("force-restart-btn").style.display = (isOwnerVal && status === "playing" && hasOffline) ? "inline-block" : "none";
+        
+                    UI.renderPlayers(publicState.players, publicState.pendingPlayerId, publicState.ownerId);
+        
+                    
+        
+                    const isLockedForHand = State.getMyConfirmPending() || iHaveSelected || status !== "playing";
+        
+                    
+        
+                    // Define card click handler
+        
+                    const onCardClick = (val) => {
+        
+                        // Re-check lock state inside handler to be safe, though UI should prevent clicks
+        
+                        const currentIsLocked = State.getMyConfirmPending() || iHaveSelected || status !== "playing";
+        
+                        if (currentIsLocked) return;
+        
+                
+        
+                        if (State.getMySelectedCardValue() === val) {
+        
+                            State.setMySelectedCardValue(null);
+        
+                        } else {
+        
+                            State.setMySelectedCardValue(val);
+        
+                        }
+        
+                        
+        
+                        // Re-run prediction and updates
+        
+                        const currentGameState = State.getCurrentGameState();
+        
+                        const predictedRowIdx = predictRow(State.getMySelectedCardValue(), currentGameState ? currentGameState.publicState.rows : [], status);
+        
+                        UI.renderPredictionMessage(predictedRowIdx);
+        
+                        
+        
+                        if (currentGameState) {
+        
+                            UI.renderBoard(currentGameState.publicState.rows, status, currentGameState.publicState.pendingPlayerId, predictedRowIdx, new Map(), State.getMyId());
+        
+                        }
+        
+                        UI.updateConfirmButton(status, iHaveSelected, State.getMyConfirmPending());
+        
+                        
+        
+                        // Re-render hand with current lock state
+        
+                        UI.renderHand(myHand, currentIsLocked, onCardClick);
+        
+                    };
+        
+                
+        
+                    UI.renderHand(myHand, isLockedForHand, onCardClick); 
+        
+                    UI.updateConfirmButton(status, iHaveSelected, State.getMyConfirmPending());
+        
+                
+        
+                    const predictedRowIdx = predictRow(State.getMySelectedCardValue(), publicState.rows, status);
+        
+                    UI.renderPredictionMessage(predictedRowIdx);
+        
+                
+        
+                    // Calc Diff for Animation and Logging
+        
+                    const landingMap = computeLanding(State.getPrevRowsSnapshot(), publicState.rows);
     const landingAll = flattenLanding(landingMap);
     const playEvents = diffPlayerPlays(State.getPrevPlayersSnapshot(), publicState.players, landingAll);
     
@@ -244,6 +315,7 @@ export function handleStateUpdate(payload) {
     
     UI.updateInstructions(status, publicState, State.getMyId());
 }
+}
 
 // Re-implemented helper functions locally or imported where it makes sense
 // Ideally these are in a 'logic.js' or 'utils.js' but fitting in main or UI for now.
@@ -259,41 +331,6 @@ export function renderRoomList(rooms) {
 
 export function log(msg) {
     UI.log(msg);
-}
-
-// Hand rendering needs access to click handlers which modify state
-export function renderHand(hand, status, iHaveSelected) {
-    const container = document.getElementById("hand");
-    container.innerHTML = "";
-    const isLocked = State.getMyConfirmPending() || iHaveSelected || status !== "playing";
-    container.className = `hand ${isLocked ? 'locked' : ''}`;
-
-    hand.forEach(c => {
-        const el = UI.createCard(c);
-        if (State.getMySelectedCardValue() === c.value) {
-            el.classList.add("selected");
-        }
-        el.onclick = (e) => {
-            if (isLocked) return;
-            if (State.getMySelectedCardValue() === c.value) {
-                State.setMySelectedCardValue(null);
-            } else {
-                State.setMySelectedCardValue(c.value);
-            }
-            
-            // Re-run prediction and updates
-            const currentGameState = State.getCurrentGameState();
-            const predictedRowIdx = predictRow(State.getMySelectedCardValue(), currentGameState ? currentGameState.publicState.rows : [], status);
-            UI.renderPredictionMessage(predictedRowIdx);
-            
-            if (currentGameState) {
-                UI.renderBoard(currentGameState.publicState.rows, status, currentGameState.publicState.pendingPlayerId, predictedRowIdx, new Map(), State.getMyId());
-            }
-            UI.updateConfirmButton(status, iHaveSelected, State.getMyConfirmPending());
-            renderHand(hand, status, iHaveSelected);
-        };
-        container.appendChild(el);
-    });
 }
 
 // --- Prediction & Diff Helpers ---

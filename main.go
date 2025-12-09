@@ -1,7 +1,9 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"take5/internal/database"
@@ -11,7 +13,15 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+//go:embed static
+var content embed.FS
+
 func main() {
+	staticRoot, err := fs.Sub(content, "static")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	store, err := database.NewStore("./take5.db")
 	if err != nil {
 		log.Fatal(err)
@@ -26,7 +36,7 @@ func main() {
 	http.HandleFunc("/check_room", handler.CheckRoomHandler)
 	http.HandleFunc("/lobby_ws", handler.HandleLobbyWS)
 	http.HandleFunc("/ws", handler.HandleGameWS)
-	http.Handle("/", http.FileServer(http.Dir("./static")))
+	http.Handle("/", http.FileServer(http.FS(staticRoot)))
 
 	fmt.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

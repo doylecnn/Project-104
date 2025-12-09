@@ -1,8 +1,5 @@
-// static/js/ui.js
-
 import { getMyId, getMySelectedCardValue, getRoomStats, isOwner, setMySelectedCardValue } from './state.js';
 import { sendAction } from './network.js';
-import { confirmPlay, renderHand } from './main.js'; // Circular dependency workarounds or better event delegation needed
 
 export function renderRoomList(rooms) {
     const container = document.getElementById("room-container");
@@ -26,6 +23,8 @@ export function renderRoomList(rooms) {
         container.appendChild(div);
     });
 }
+
+// ... (renderPlayers, createCard, renderBoard functions remain unchanged)
 
 export function renderPlayers(players, pendingPid, ownerId) {
     const container = document.getElementById("player-list");
@@ -71,6 +70,13 @@ export function renderBoard(rows, status, pendingPid, predictedRow, landingMap, 
         
         const landingCards = landingMap.get(idx) || [];
         
+        // Calculate and display row score (bullheads)
+        const rowScore = (row.cards || []).reduce((sum, c) => sum + c.score, 0);
+        const scoreDiv = document.createElement("div");
+        scoreDiv.className = "row-score";
+        scoreDiv.innerHTML = `${rowScore} 🐮`;
+        div.appendChild(scoreDiv);
+
         (row.cards || []).forEach(c => {
             const cardEl = createCard(c);
             cardEl.dataset.cardValue = c.value;
@@ -88,10 +94,18 @@ export function renderBoard(rows, status, pendingPid, predictedRow, landingMap, 
     return animationTargets;
 }
 
-export function updateInstructions(status, publicState, myId) {
+export function updateInstructions(status, publicState, myId, countdownValue = null) {
     const instruction = document.getElementById("instruction");
     const readyBtn = document.getElementById("ready-btn");
     
+    if (status === "countdown" && countdownValue !== null) {
+        instruction.style.display = "block";
+        instruction.style.background = "#e67e22"; // Orange for countdown
+        instruction.innerHTML = `新一局游戏将在 <strong>${countdownValue}</strong> 秒后开始...`;
+        readyBtn.style.display = "none"; // Hide ready button during countdown
+        return;
+    }
+
     if (status === "waiting") {
         readyBtn.style.display = "inline-block";
         const meReady = publicState.players[myId];
@@ -198,6 +212,23 @@ export function processAnimations(targets, cardOwnerMap, myId, lastSubmittedCard
             cardEl.classList.add("landing");
             setTimeout(() => cardEl.classList.remove("landing"), 500);
         }, 650);
+    });
+}
+
+export function renderHand(hand, isLocked, onCardClick) {
+    const container = document.getElementById("hand");
+    container.innerHTML = "";
+    container.className = `hand ${isLocked ? 'locked' : ''}`;
+
+    hand.forEach(c => {
+        const el = createCard(c);
+        if (getMySelectedCardValue() === c.value) {
+            el.classList.add("selected");
+        }
+        el.onclick = () => {
+            if (!isLocked && onCardClick) onCardClick(c.value);
+        };
+        container.appendChild(el);
     });
 }
 
